@@ -1,0 +1,67 @@
+import 'dotenv/config';
+import './config/env'; // Fail fast on missing env vars
+import express from 'express';
+import helmet from 'helmet';
+import cors from 'cors';
+import { rateLimit } from 'express-rate-limit';
+import { initSentry } from './config/sentry';
+import { logger } from './config/logger';
+import { checkDbConnection } from './db/index';
+import { apiRouter } from './routes/index';
+import { requestIdMiddleware } from './middleware/requestId.middleware';
+import { errorMiddleware } from './middleware/error.middleware';
+
+initSentry();
+
+const app = express();
+const PORT = process.env['PORT'] ?? 3000;
+
+// Security middleware
+app.use(helmet());
+app.use(
+  cors({
+    origin:
+      process.env['NODE_ENV'] === 'production'
+        ? ['https://huellitas.app']
+        : ['http://localhost:8081', 'http://localhost:19006'],
+    credentials: true,
+  }),
+);
+
+// Rate limiting
+app.use(
+  rateLimit({
+    windowMs: 60 * 1000,
+    max: 100,
+    standardHeaders: true,
+    legacyHeaders: false,
+  }),
+);
+
+// Request parsing
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true }));
+app.use(requestIdMiddleware);
+
+// Health check (no auth required)
+app.get('/health', async (_req, res) => {
+  const dbOk = await checkDbConnection();
+  const status = dbOk ? 'ok' : 'degraded';
+  res.status(dbOk ? 200 : 503).json({
+    status,
+    version: process.env['npm_package_version'] ?? '0.1.0',
+    timestamp: new Date().toISOString(),
+  });
+});
+
+// API routes
+app.use('/api/v1', apiRouter);
+
+// Centralized error handler (must be last)
+app.use(errorMiddleware);
+
+app.listen(PORT, () => {
+  logger.info(`🐾 Huellitas API running on port ${PORT}`);
+});
+
+export { app };

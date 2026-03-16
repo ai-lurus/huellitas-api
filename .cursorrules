@@ -1,0 +1,84 @@
+# Huellitas API — Cursor Rules
+
+## Stack
+Node.js v22 LTS, Express v4, TypeScript strict mode, PostgreSQL 16 + PostGIS, Better Auth, Zod v3, Winston, Sentry.
+
+## Architecture (Layered — strictly enforced)
+Routes → Controllers → Services → Repositories → Database
+
+Rules:
+- Routes: define HTTP verbs, paths, attach middleware
+- Controllers: extract request data, call services, format response. NO business logic.
+- Services: orchestrate business logic. NO SQL. NO direct req/res handling.
+- Repositories: execute SQL queries only. Return typed domain objects.
+- Database: pool configuration only.
+
+## Naming Conventions
+- Files: kebab-case (users.service.ts, pets.repository.ts)
+- Classes/Interfaces: PascalCase
+- Functions/methods: camelCase
+- Constants: SCREAMING_SNAKE_CASE
+- Database columns: snake_case
+- Route params: camelCase in TypeScript, snake_case in SQL
+
+## TypeScript
+- Enable strict mode
+- All function parameters and return types must be explicit
+- Use `unknown` for errors, narrow with type guards
+- Define Zod schemas for ALL external input (body, query, params)
+- Infer TypeScript types from Zod schemas: `type CreatePetDto = z.infer<typeof createPetSchema>`
+
+## Input Validation (MANDATORY)
+- Validate ALL inputs at the route level using Zod
+- Use `validate(schema)` middleware factory
+- Never access req.body without validation
+- Validate query params (lat, lng, radius) with number ranges
+
+## Error Handling (Centralized)
+- Throw typed errors from services/repositories: `throw new NotFoundError('Pet not found')`
+- Centralized error middleware in src/middleware/error.middleware.ts handles all errors
+- Never return raw database errors to client
+- Log errors with Winston including request ID, user ID, stack trace
+- Send to Sentry for unexpected errors
+
+## Repository Pattern (Strict)
+- ALL SQL lives in repositories only
+- Controllers and services must NEVER contain SQL or raw pg queries
+- Repository methods return typed domain objects (not raw pg rows)
+- Use parameterized queries always (never string interpolation in SQL)
+- Use PostGIS functions for geo queries (ST_DWithin, ST_MakePoint)
+
+## Immutability
+- Never mutate function arguments
+- Return new objects from transformations
+- Repositories return new objects from DB rows
+
+## Security (CRITICAL)
+- Helmet on all routes
+- Rate limiting: auth (5/min), API (100/min/user), upload (10/min)
+- CORS: whitelist only known origins
+- No sensitive data in logs (no passwords, no full tokens)
+- Environment variables validated at startup via Zod (fail fast)
+- Parameterized queries everywhere (SQL injection prevention)
+
+## Logging
+- Use Winston logger (src/config/logger.ts) — never use console.log
+- Always include: requestId, userId (if authenticated), action description
+- Log levels: debug (dev only), info (operations), warn (degraded), error (failures)
+- Never log: passwords, tokens, private keys, full request bodies with sensitive fields
+
+## Testing
+- Write tests BEFORE implementation (TDD)
+- Integration tests: full HTTP requests via Supertest (routes → DB)
+- Unit tests: services with mocked repositories
+- Repository tests: hit test database (real PostgreSQL)
+- Coverage: 80% minimum
+- Test naming: `describe('PetsService', () => { describe('#createPet', () => { it('creates a pet for the owner', ...) }) })`
+
+## Common Anti-Patterns to AVOID
+- SQL in controllers or services
+- Business logic in controllers
+- Direct console.log (use Winston)
+- Hardcoded secrets or config values (use env.ts)
+- Ignoring async errors (always await and handle)
+- Fat repositories (one method per query, max 50 lines)
