@@ -4,9 +4,11 @@ import express from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
 import { rateLimit } from 'express-rate-limit';
+import { toNodeHandler } from 'better-auth/node';
 import { initSentry } from './config/sentry';
 import { logger } from './config/logger';
 import { checkDbConnection } from './db/index';
+import { auth } from './config/auth';
 import { apiRouter } from './routes/index';
 import { requestIdMiddleware } from './middleware/requestId.middleware';
 import { errorMiddleware } from './middleware/error.middleware';
@@ -43,8 +45,18 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(requestIdMiddleware);
 
+// Better Auth routes — rate limited to 5 req/min per IP
+const authLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: 'Too many requests, please try again later.' },
+});
+app.all('/api/auth/*', authLimiter, toNodeHandler(auth));
+
 // Health check (no auth required)
-app.get('/health', async (_req, res) => {
+app.get('/health', async (_req: express.Request, res: express.Response) => {
   const dbOk = await checkDbConnection();
   const status = dbOk ? 'ok' : 'degraded';
   res.status(dbOk ? 200 : 503).json({
