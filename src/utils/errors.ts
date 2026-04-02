@@ -43,3 +43,10 @@ export class ConflictError extends AppError {
     this.name = 'ConflictError';
   }
 }
+
+export class LimitExceededError extends AppError {
+  constructor(message = 'Limit exceeded') {
+    super('LIMIT_EXCEEDED', 422, message);
+    this.name = 'LimitExceededError';
+  }
+}

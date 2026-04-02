@@ -1,3 +1,3 @@
 export default async function globalTeardown(): Promise<void> {
-  // Add cleanup logic here (e.g., drop test schema, close connections)
+  // Per-suite DB teardown is handled in each integration test's afterAll
 }

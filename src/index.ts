@@ -1,19 +1,18 @@
 import 'dotenv/config';
 import './config/env'; // Fail fast on missing env vars
+import './config/sentry'; // Must be before express import
+import * as Sentry from '@sentry/node';
 import express from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
 import { rateLimit } from 'express-rate-limit';
 import { toNodeHandler } from 'better-auth/node';
-import { initSentry } from './config/sentry';
 import { logger } from './config/logger';
 import { checkDbConnection } from './db/index';
 import { auth } from './config/auth';
 import { apiRouter } from './routes/index';
 import { requestIdMiddleware } from './middleware/requestId.middleware';
 import { errorMiddleware } from './middleware/error.middleware';
-
-initSentry();
 
 const app = express();
 const PORT = process.env['PORT'] ?? 3000;
@@ -68,6 +67,9 @@ app.get('/health', async (_req: express.Request, res: express.Response) => {
 
 // API routes
 app.use('/api/v1', apiRouter);
+
+// Sentry error handler (must be before custom error handler)
+Sentry.setupExpressErrorHandler(app);
 
 // Centralized error handler (must be last)
 app.use(errorMiddleware);

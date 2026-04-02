@@ -1,12 +1,15 @@
 import * as Sentry from '@sentry/node';
 
-export function initSentry(): void {
-  const dsn = process.env['SENTRY_DSN'];
-  if (!dsn) return;
+const dsn = process.env['SENTRY_DSN'];
+
+if (dsn) {
+  const isProd = process.env['NODE_ENV'] === 'production';
 
   Sentry.init({
     dsn,
     environment: process.env['NODE_ENV'] ?? 'development',
-    tracesSampleRate: 0.1,
+    release: process.env['npm_package_version'],
+    tracesSampleRate: isProd ? 0.1 : 1.0,
+    sendDefaultPii: false,
   });
 }
