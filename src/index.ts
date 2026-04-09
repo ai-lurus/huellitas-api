@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import './config/env'; // Fail fast on missing env vars
+import { corsAllowedOrigins } from './config/env'; // valida env y expone orígenes CORS
 import './config/sentry'; // Must be before express import
 import * as Sentry from '@sentry/node';
 import express from 'express';
@@ -11,6 +11,7 @@ import { logger } from './config/logger';
 import { checkDbConnection } from './db/index';
 import { auth } from './config/auth';
 import { apiRouter } from './routes/index';
+import { usersRouter } from './routes/users.routes';
 import { requestIdMiddleware } from './middleware/requestId.middleware';
 import { errorMiddleware } from './middleware/error.middleware';
 
@@ -21,10 +22,7 @@ const PORT = process.env['PORT'] ?? 3000;
 app.use(helmet());
 app.use(
   cors({
-    origin:
-      process.env['NODE_ENV'] === 'production'
-        ? ['https://huellitas.app']
-        : ['http://localhost:8081', 'http://localhost:19006'],
+    origin: corsAllowedOrigins,
     credentials: true,
   }),
 );
@@ -44,10 +42,10 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(requestIdMiddleware);
 
-// Better Auth routes — rate limited to 5 req/min per IP
+// Better Auth — límite por IP (get-session en el cliente puede dispararse a menudo)
 const authLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 5,
+  max: process.env['NODE_ENV'] === 'production' ? 60 : 300,
   standardHeaders: true,
   legacyHeaders: false,
   message: { success: false, error: 'Too many requests, please try again later.' },
@@ -67,6 +65,8 @@ app.get('/health', async (_req: express.Request, res: express.Response) => {
 
 // API routes
 app.use('/api/v1', apiRouter);
+// Alias: el cliente móvil usa `/users/me` sin prefijo `/api/v1`
+app.use('/users', usersRouter);
 
 // Sentry error handler (must be before custom error handler)
 Sentry.setupExpressErrorHandler(app);
