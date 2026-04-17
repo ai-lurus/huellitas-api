@@ -1,9 +1,10 @@
 import { betterAuth } from 'better-auth';
 import { Pool } from 'pg';
-import { env } from './env';
+import { env, authTrustedOrigins } from './env';
 
 export const auth = betterAuth({
   database: new Pool({ connectionString: env.DATABASE_URL }),
+  trustedOrigins: authTrustedOrigins,
   emailAndPassword: { enabled: true },
   socialProviders: {
     ...(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET
