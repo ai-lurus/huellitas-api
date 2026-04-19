@@ -50,6 +50,8 @@ describe('auth config', () => {
     expect(betterAuth).toHaveBeenCalledTimes(1);
     const callArg = (betterAuth as jest.Mock).mock.calls[0][0];
     expect(callArg.emailAndPassword.enabled).toBe(true);
+    expect(callArg.baseURL).toBe('http://localhost:3000');
+    expect(callArg.basePath).toBe('/api/auth');
   });
 
   it('configures Google OAuth social provider', async () => {

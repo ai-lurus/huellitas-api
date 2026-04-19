@@ -1,9 +1,9 @@
 import 'dotenv/config';
 
-import { betterAuth } from 'better-auth';
 import type { PoolClient } from 'pg';
 import { Pool } from 'pg';
-import { env, authTrustedOrigins } from '../config/env';
+import { createBetterAuth } from '../config/better-auth.shared';
+import { env } from '../config/env';
 
 type SignUpEmailResult = {
   user?: { id?: string };
@@ -29,58 +29,6 @@ function readStatusCode(err: unknown): number | undefined {
   }
 
   return undefined;
-}
-
-// Nota: no tipamos el retorno explícitamente; Better Auth infiere opciones genéricas y TS puede chocar.
-// eslint-disable-next-line @typescript-eslint/explicit-function-return-type
-function buildAuth(pool: Pool) {
-  return betterAuth({
-    database: pool,
-    trustedOrigins: authTrustedOrigins,
-    emailAndPassword: { enabled: true },
-    socialProviders: {},
-    user: {
-      fields: {
-        emailVerified: 'email_verified',
-        createdAt: 'created_at',
-        updatedAt: 'updated_at',
-      },
-    },
-    session: {
-      expiresIn: 60 * 15,
-      updateAge: 60 * 60 * 24,
-      cookieCache: { enabled: true, maxAge: 60 * 60 * 24 * 30 },
-      fields: {
-        expiresAt: 'expires_at',
-        createdAt: 'created_at',
-        updatedAt: 'updated_at',
-        ipAddress: 'ip_address',
-        userAgent: 'user_agent',
-        userId: 'user_id',
-      },
-    },
-    account: {
-      fields: {
-        accountId: 'account_id',
-        providerId: 'provider_id',
-        userId: 'user_id',
-        accessToken: 'access_token',
-        refreshToken: 'refresh_token',
-        idToken: 'id_token',
-        accessTokenExpiresAt: 'access_token_expires_at',
-        refreshTokenExpiresAt: 'refresh_token_expires_at',
-        createdAt: 'created_at',
-        updatedAt: 'updated_at',
-      },
-    },
-    verification: {
-      fields: {
-        expiresAt: 'expires_at',
-        createdAt: 'created_at',
-        updatedAt: 'updated_at',
-      },
-    },
-  });
 }
 
 async function truncateAllAppData(client: PoolClient): Promise<void> {
@@ -119,7 +67,7 @@ async function main(): Promise<void> {
     client.release();
   }
 
-  const auth = buildAuth(pool);
+  const auth = createBetterAuth(pool);
 
   try {
     const result = (await auth.api.signUpEmail({
