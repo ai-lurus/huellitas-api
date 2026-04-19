@@ -21,6 +21,10 @@ jest.mock('better-auth', () => ({
   }),
 }));
 
+jest.mock('better-auth/plugins', () => ({
+  bearer: jest.fn().mockReturnValue({ id: 'bearer' }),
+}));
+
 describe('auth config', () => {
   beforeEach(() => {
     jest.resetModules();
@@ -52,6 +56,15 @@ describe('auth config', () => {
     expect(callArg.emailAndPassword.enabled).toBe(true);
     expect(callArg.baseURL).toBe('http://localhost:3000');
     expect(callArg.basePath).toBe('/api/auth');
+  });
+
+  it('registers bearer plugin so API routes accept Authorization: Bearer', async () => {
+    const { betterAuth } = await import('better-auth');
+    await import('../src/config/auth');
+
+    const callArg = (betterAuth as jest.Mock).mock.calls[0][0];
+    expect(Array.isArray(callArg.plugins)).toBe(true);
+    expect(callArg.plugins.length).toBeGreaterThanOrEqual(1);
   });
 
   it('configures Google OAuth social provider', async () => {
