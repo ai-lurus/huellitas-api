@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { ZodError, z } from 'zod';
+import multer from 'multer';
 import { errorMiddleware } from '../../../src/middleware/error.middleware';
 import {
   AppError,
@@ -70,6 +71,27 @@ describe('errorMiddleware', () => {
     expect((res.json as jest.Mock).mock.calls[0][0]).toMatchObject({
       success: false,
       code: 'LIMIT_EXCEEDED',
+    });
+  });
+
+  it('returns 413 for MulterError LIMIT_FILE_SIZE', () => {
+    const { req, res, next } = makeMocks();
+    const err = new multer.MulterError('LIMIT_FILE_SIZE');
+    errorMiddleware(err, req, res, next);
+    expect((res.status as jest.Mock).mock.calls[0][0]).toBe(413);
+    expect((res.json as jest.Mock).mock.calls[0][0]).toMatchObject({
+      success: false,
+      code: 'FILE_TOO_LARGE',
+    });
+  });
+
+  it('returns 400 for INVALID_FILE_TYPE from multer fileFilter', () => {
+    const { req, res, next } = makeMocks();
+    errorMiddleware(new Error('INVALID_FILE_TYPE'), req, res, next);
+    expect((res.status as jest.Mock).mock.calls[0][0]).toBe(400);
+    expect((res.json as jest.Mock).mock.calls[0][0]).toMatchObject({
+      success: false,
+      code: 'INVALID_FILE_TYPE',
     });
   });
 

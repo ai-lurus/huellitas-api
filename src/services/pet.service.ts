@@ -24,7 +24,7 @@ export class PetService {
   async createPet(userId: string, data: Omit<CreatePetData, 'user_id'>): Promise<Pet> {
     const count = await this.repo.countByUserId(userId);
     if (count >= MAX_PETS_PER_USER) {
-      throw new LimitExceededError(`Maximum of ${MAX_PETS_PER_USER} pets per user allowed`);
+      throw new LimitExceededError('You can only have 3 pets');
     }
     return this.repo.create({ ...data, user_id: userId });
   }
@@ -47,28 +47,31 @@ export class PetService {
 
   async deletePet(petId: string, userId: string): Promise<void> {
     const pet = await this.repo.findById(petId);
-    if (!pet) throw new NotFoundError('Pet not found');
-    if (pet.user_id !== userId) throw new ForbiddenError();
+    if (!pet || pet.user_id !== userId) throw new NotFoundError('Pet not found');
     await this.repo.softDelete(petId);
   }
 
-  async addPhoto(petId: string, userId: string, file: Express.Multer.File): Promise<Pet> {
+  async addPhoto(
+    petId: string,
+    userId: string,
+    file: Express.Multer.File,
+  ): Promise<{ url: string; id: string }> {
     const pet = await this.repo.findById(petId);
     if (!pet) throw new NotFoundError('Pet not found');
-    if (pet.user_id !== userId) throw new ForbiddenError();
+    if (pet.user_id !== userId) throw new ForbiddenError('You do not have access to this pet');
     if (pet.photos.length >= MAX_PHOTOS_PER_PET) {
       throw new ValidationError(`Maximum of ${MAX_PHOTOS_PER_PET} photos per pet allowed`);
     }
 
-    const photoUrl = await uploadFile(
+    const uploaded = await uploadFile(
       file.buffer,
       `pets/${petId}`,
       file.originalname,
       file.mimetype,
     );
 
-    const updated = await this.repo.addPhoto(petId, photoUrl);
+    const updated = await this.repo.addPhoto(petId, uploaded.url);
     if (!updated) throw new NotFoundError('Pet not found');
-    return updated;
+    return { url: uploaded.url, id: uploaded.id };
   }
 }

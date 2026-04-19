@@ -12,7 +12,11 @@ const upload = multer({
   limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
     const allowed = ['image/jpeg', 'image/png', 'image/webp'];
-    cb(null, allowed.includes(file.mimetype));
+    if (!allowed.includes(file.mimetype)) {
+      cb(new Error('INVALID_FILE_TYPE'));
+      return;
+    }
+    cb(null, true);
   },
 });
 
@@ -20,9 +24,9 @@ router.use(requireAuth);
 
 router.get('/', petController.listPets);
 router.post('/', validate(createPetSchema), petController.createPet);
-router.get('/:id', petController.getPet);
-router.patch('/:id', validate(updatePetSchema), petController.updatePet);
-router.delete('/:id', petController.deletePet);
-router.post('/:id/photos', upload.single('photo'), petController.uploadPhoto);
+router.get('/:petId', petController.getPet);
+router.patch('/:petId', validate(updatePetSchema), petController.updatePet);
+router.delete('/:petId', petController.deletePet);
+router.post('/:petId/photos', upload.single('photo'), petController.uploadPhoto);
 
 export { router as petsRouter };

@@ -23,7 +23,10 @@ jest.mock('../../src/middleware/auth.middleware', () => ({
 
 // Mock storage service to avoid real R2 calls
 jest.mock('../../src/services/storage.service', () => ({
-  uploadFile: jest.fn().mockResolvedValue('https://cdn.huellitas.app/pets/test-pet/photo.jpg'),
+  uploadFile: jest.fn().mockResolvedValue({
+    url: 'https://cdn.huellitas.app/pets/test-pet/photo.jpg',
+    id: 'mock-upload-id',
+  }),
   deleteFile: jest.fn().mockResolvedValue(undefined),
 }));
 
@@ -86,7 +89,8 @@ describeIfDb('Pets API — Integration Tests', () => {
       expect(res.body.success).toBe(true);
       expect(res.body.data.name).toBe('Firulais');
       expect(res.body.data.species).toBe('dog');
-      expect(res.body.data.user_id).toBe(TEST_USER_ID);
+      expect(res.body.data.userId).toBe(TEST_USER_ID);
+      expect(res.body.data.isLost).toBe(false);
     });
 
     it('returns 400 for missing required fields', async () => {
@@ -99,15 +103,16 @@ describeIfDb('Pets API — Integration Tests', () => {
       for (let i = 0; i < 3; i++) {
         await request(app)
           .post('/api/v1/pets')
-          .send({ name: `Pet ${i}`, species: 'cat' });
+          .send({ name: `Pet ${i}`, species: 'cat', sex: 'female' });
       }
 
       const res = await request(app)
         .post('/api/v1/pets')
-        .send({ name: 'Fourth Pet', species: 'dog' });
+        .send({ name: 'Fourth Pet', species: 'dog', sex: 'male' });
 
       expect(res.status).toBe(422);
       expect(res.body.code).toBe('LIMIT_EXCEEDED');
+      expect(res.body.error).toBe('You can only have 3 pets');
     });
   });
 
@@ -119,20 +124,21 @@ describeIfDb('Pets API — Integration Tests', () => {
     });
 
     it('returns only non-deleted pets for the user', async () => {
-      await request(app).post('/api/v1/pets').send({ name: 'Miau', species: 'cat' });
-      await request(app).post('/api/v1/pets').send({ name: 'Rex', species: 'dog' });
+      await request(app).post('/api/v1/pets').send({ name: 'Miau', species: 'cat', sex: 'female' });
+      await request(app).post('/api/v1/pets').send({ name: 'Rex', species: 'dog', sex: 'male' });
 
       const res = await request(app).get('/api/v1/pets');
       expect(res.status).toBe(200);
       expect(res.body.data).toHaveLength(2);
+      expect(res.body.data[0]).toHaveProperty('isLost');
     });
   });
 
-  describe('GET /api/v1/pets/:id', () => {
+  describe('GET /api/v1/pets/:petId', () => {
     it('returns a single pet', async () => {
       const created = await request(app)
         .post('/api/v1/pets')
-        .send({ name: 'Buddy', species: 'dog' });
+        .send({ name: 'Buddy', species: 'dog', sex: 'male' });
 
       const res = await request(app).get(`/api/v1/pets/${created.body.data.id}`);
       expect(res.status).toBe(200);
@@ -158,11 +164,11 @@ describeIfDb('Pets API — Integration Tests', () => {
     });
   });
 
-  describe('PATCH /api/v1/pets/:id', () => {
+  describe('PATCH /api/v1/pets/:petId', () => {
     it('updates a pet', async () => {
       const created = await request(app)
         .post('/api/v1/pets')
-        .send({ name: 'OldName', species: 'rabbit' });
+        .send({ name: 'OldName', species: 'rabbit', sex: 'unknown' });
 
       const res = await request(app)
         .patch(`/api/v1/pets/${created.body.data.id}`)
@@ -174,11 +180,11 @@ describeIfDb('Pets API — Integration Tests', () => {
     });
   });
 
-  describe('DELETE /api/v1/pets/:id', () => {
+  describe('DELETE /api/v1/pets/:petId', () => {
     it('soft deletes a pet and returns 204', async () => {
       const created = await request(app)
         .post('/api/v1/pets')
-        .send({ name: 'Tobi', species: 'dog' });
+        .send({ name: 'Tobi', species: 'dog', sex: 'male' });
 
       const petId = created.body.data.id as string;
       const deleteRes = await request(app).delete(`/api/v1/pets/${petId}`);
@@ -192,20 +198,31 @@ describeIfDb('Pets API — Integration Tests', () => {
     it('returns 404 when deleting an already deleted pet', async () => {
       const created = await request(app)
         .post('/api/v1/pets')
-        .send({ name: 'Gone', species: 'bird' });
+        .send({ name: 'Gone', species: 'bird', sex: 'unknown' });
 
       const petId = created.body.data.id as string;
       await request(app).delete(`/api/v1/pets/${petId}`);
       const res = await request(app).delete(`/api/v1/pets/${petId}`);
       expect(res.status).toBe(404);
     });
+
+    it('returns 404 when pet belongs to another user', async () => {
+      const { rows } = await pool.query<{ id: string }>(
+        `INSERT INTO pets (user_id, name, species, sex) VALUES ($1, $2, $3, $4) RETURNING id`,
+        [OTHER_USER_ID, 'Foreign', 'cat', 'female'],
+      );
+      const otherId = rows[0]?.id as string;
+
+      const res = await request(app).delete(`/api/v1/pets/${otherId}`);
+      expect(res.status).toBe(404);
+    });
   });
 
-  describe('POST /api/v1/pets/:id/photos', () => {
-    it('uploads a photo and returns the pet with updated photos array', async () => {
+  describe('POST /api/v1/pets/:petId/photos', () => {
+    it('uploads a photo and returns public url and id', async () => {
       const created = await request(app)
         .post('/api/v1/pets')
-        .send({ name: 'PhotoPet', species: 'dog' });
+        .send({ name: 'PhotoPet', species: 'dog', sex: 'male' });
 
       const petId = created.body.data.id as string;
       const res = await request(app)
@@ -216,13 +233,17 @@ describeIfDb('Pets API — Integration Tests', () => {
         });
 
       expect(res.status).toBe(201);
-      expect(res.body.data.photos).toHaveLength(1);
+      expect(res.body.data.url).toContain('https://');
+      expect(res.body.data.id).toBe('mock-upload-id');
+
+      const getRes = await request(app).get(`/api/v1/pets/${petId}`);
+      expect(getRes.body.data.photos).toHaveLength(1);
     });
 
     it('returns 400 when no file is provided', async () => {
       const created = await request(app)
         .post('/api/v1/pets')
-        .send({ name: 'NoPhoto', species: 'cat' });
+        .send({ name: 'NoPhoto', species: 'cat', sex: 'female' });
 
       const res = await request(app).post(`/api/v1/pets/${created.body.data.id}/photos`);
       expect(res.status).toBe(400);

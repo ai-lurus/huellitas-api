@@ -20,7 +20,10 @@ jest.mock('../../src/middleware/auth.middleware', () => ({
 }));
 
 jest.mock('../../src/services/storage.service', () => ({
-  uploadFile: jest.fn().mockResolvedValue('https://cdn.huellitas.app/avatars/test/face.jpg'),
+  uploadFile: jest.fn().mockResolvedValue({
+    url: 'https://cdn.huellitas.app/avatars/test/face.jpg',
+    id: 'mock-avatar-upload-id',
+  }),
   deleteFile: jest.fn().mockResolvedValue(undefined),
 }));
 
