@@ -50,6 +50,8 @@ describe('auth config', () => {
     expect(betterAuth).toHaveBeenCalledTimes(1);
     const callArg = (betterAuth as jest.Mock).mock.calls[0][0];
     expect(callArg.emailAndPassword.enabled).toBe(true);
+    expect(callArg.baseURL).toBe('http://localhost:3000');
+    expect(callArg.basePath).toBe('/api/auth');
   });
 
   it('configures Google OAuth social provider', async () => {
@@ -60,6 +62,22 @@ describe('auth config', () => {
     expect(callArg.socialProviders.google).toBeDefined();
     expect(callArg.socialProviders.google.clientId).toBe('google-client-id');
     expect(callArg.socialProviders.google.clientSecret).toBe('google-client-secret');
+  });
+
+  it('passes trustedOrigins for Expo deep link and dev hosts (Better Auth callbackURL)', async () => {
+    const { betterAuth } = await import('better-auth');
+    await import('../src/config/auth');
+
+    const callArg = (betterAuth as jest.Mock).mock.calls[0][0];
+    expect(Array.isArray(callArg.trustedOrigins)).toBe(true);
+    expect(callArg.trustedOrigins).toEqual(
+      expect.arrayContaining([
+        'http://localhost:8081',
+        'http://127.0.0.1:8081',
+        'huellitas://',
+        'huellitas://*',
+      ]),
+    );
   });
 
   it('configures session with 15-minute access token and 30-day cookie cache', async () => {
