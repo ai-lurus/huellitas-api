@@ -1,4 +1,5 @@
 import { betterAuth } from 'better-auth';
+import { bearer } from 'better-auth/plugins';
 import type { Pool } from 'pg';
 import { env, authTrustedOrigins } from './env';
 
@@ -13,6 +14,8 @@ export function createBetterAuth(pool: Pool) {
     basePath: '/api/auth',
     database: pool,
     trustedOrigins: authTrustedOrigins,
+    /** Permite `Authorization: Bearer <token>` en la app móvil (cookies no van con RN/Expo por defecto). */
+    plugins: [bearer()],
     emailAndPassword: { enabled: true },
     socialProviders: {
       ...(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET

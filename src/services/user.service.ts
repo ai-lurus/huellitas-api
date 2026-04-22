@@ -63,7 +63,7 @@ export class UserService {
     const existing = await this.repo.findProfileById(userId);
     if (!existing) throw new NotFoundError('Usuario no encontrado');
 
-    const url = await uploadFile(
+    const { url } = await uploadFile(
       file.buffer,
       `avatars/${userId}`,
       file.originalname,

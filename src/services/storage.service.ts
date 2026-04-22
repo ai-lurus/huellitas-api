@@ -22,13 +22,14 @@ export async function uploadFile(
   folder: string,
   originalName: string,
   contentType: string,
-): Promise<string> {
+): Promise<{ url: string; id: string }> {
   if (!env.R2_BUCKET_NAME || !env.R2_PUBLIC_URL) {
     throw new ValidationError('Storage service is not configured');
   }
 
   const ext = originalName.split('.').pop() ?? 'bin';
-  const key = `${folder}/${randomUUID()}.${ext}`;
+  const id = randomUUID();
+  const key = `${folder}/${id}.${ext}`;
 
   const client = getS3Client();
   await client.send(
@@ -40,7 +41,7 @@ export async function uploadFile(
     }),
   );
 
-  return `${env.R2_PUBLIC_URL}/${key}`;
+  return { url: `${env.R2_PUBLIC_URL}/${key}`, id };
 }
 
 export async function deleteFile(url: string): Promise<void> {

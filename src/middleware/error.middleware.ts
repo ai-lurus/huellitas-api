@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { ZodError } from 'zod';
+import multer from 'multer';
 import * as Sentry from '@sentry/node';
 import { AppError } from '../utils/errors';
 import { logger } from '../config/logger';
@@ -24,6 +25,34 @@ export function errorMiddleware(
       success: false,
       error: 'Validation failed',
       details: err.flatten().fieldErrors,
+    });
+    return;
+  }
+
+  if (err instanceof multer.MulterError) {
+    logger.warn({ requestId, userId, message: 'Multer error', code: err.code });
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      res.status(413).json({
+        success: false,
+        error: 'File too large (max 5 MB)',
+        code: 'FILE_TOO_LARGE',
+      });
+      return;
+    }
+    res.status(400).json({
+      success: false,
+      error: 'Upload failed',
+      code: err.code,
+    });
+    return;
+  }
+
+  if (err instanceof Error && err.message === 'INVALID_FILE_TYPE') {
+    logger.warn({ requestId, userId, message: 'Invalid upload MIME type' });
+    res.status(400).json({
+      success: false,
+      error: 'Invalid file type. Allowed: JPEG, PNG, WebP.',
+      code: 'INVALID_FILE_TYPE',
     });
     return;
   }
