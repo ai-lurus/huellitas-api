@@ -17,6 +17,8 @@ export type PetApiDto = {
   age: number | null;
   notes: string | null;
   photos: string[];
+  /** Primera foto de la galería; conviene para miniatura en lista/tarjeta. */
+  coverPhotoUrl: string | null;
   isLost: boolean;
   createdAt: string | null;
   updatedAt: string | null;
@@ -24,6 +26,11 @@ export type PetApiDto = {
 
 /** Elemento de lista (sin `userId`). */
 export type PetListItemDto = Omit<PetApiDto, 'userId'>;
+
+function firstPhotoUrl(photos: string[] | null | undefined): string | null {
+  const first = photos?.[0];
+  return first && first.length > 0 ? first : null;
+}
 
 /** Formato API (camelCase) para el cliente móvil. */
 export function petToApi(pet: Pet): PetApiDto {
@@ -38,6 +45,7 @@ export function petToApi(pet: Pet): PetApiDto {
     age: pet.age_years != null ? Math.round(Number(pet.age_years)) : null,
     notes: pet.notes,
     photos: pet.photos,
+    coverPhotoUrl: firstPhotoUrl(pet.photos),
     isLost: pet.is_lost,
     createdAt: toIso(pet.created_at),
     updatedAt: toIso(pet.updated_at),
@@ -57,6 +65,7 @@ export function petToListItem(pet: Pet): PetListItemDto {
     age: pet.age_years != null ? Math.round(Number(pet.age_years)) : null,
     notes: pet.notes,
     photos: pet.photos,
+    coverPhotoUrl: firstPhotoUrl(pet.photos),
     createdAt: toIso(pet.created_at),
     updatedAt: toIso(pet.updated_at),
   };

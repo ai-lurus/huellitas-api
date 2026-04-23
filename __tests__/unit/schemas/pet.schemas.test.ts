@@ -1,4 +1,4 @@
-import { createPetSchema } from '../../../src/schemas/pet.schemas';
+import { createPetSchema, updatePetSchema } from '../../../src/schemas/pet.schemas';
 
 describe('createPetSchema', () => {
   it('accepts a valid payload with required sex and optional age', () => {
@@ -42,5 +42,22 @@ describe('createPetSchema', () => {
     });
     expect(parsed.success).toBe(true);
     if (parsed.success) expect(parsed.data.age).toBe(3);
+  });
+
+  it('rechaza isLost en creación (strict)', () => {
+    const parsed = createPetSchema.safeParse({
+      name: 'Rex',
+      species: 'dog',
+      sex: 'male',
+      isLost: true,
+    });
+    expect(parsed.success).toBe(false);
+  });
+});
+
+describe('updatePetSchema', () => {
+  it('acepta solo isLost', () => {
+    const parsed = updatePetSchema.safeParse({ isLost: true });
+    expect(parsed.success).toBe(true);
   });
 });

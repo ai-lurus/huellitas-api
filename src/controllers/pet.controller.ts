@@ -25,9 +25,10 @@ function createBodyToRepo(body: CreatePetInput): Omit<CreatePetData, 'user_id'> 
 }
 
 function updateBodyToRepo(body: UpdatePetInput): UpdatePetData {
-  const { age, ...rest } = body;
+  const { age, isLost, ...rest } = body;
   const data: UpdatePetData = { ...rest };
   if (age !== undefined) data.age_years = age;
+  if (isLost !== undefined) data.is_lost = isLost;
   return data;
 }
 

@@ -37,6 +37,7 @@ export interface UpdatePetData {
   sex?: string | null;
   age_years?: number | null;
   notes?: string | null;
+  is_lost?: boolean;
 }
 
 export class PetRepository {
@@ -122,6 +123,10 @@ export class PetRepository {
     if (data.notes !== undefined) {
       fields.push(`notes = $${idx++}`);
       values.push(data.notes);
+    }
+    if (data.is_lost !== undefined) {
+      fields.push(`is_lost = $${idx++}`);
+      values.push(data.is_lost);
     }
 
     if (fields.length === 0) return this.findById(id);

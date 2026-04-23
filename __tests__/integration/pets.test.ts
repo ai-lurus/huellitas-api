@@ -132,6 +132,23 @@ describeIfDb('Pets API — Integration Tests', () => {
       expect(res.body.data).toHaveLength(2);
       expect(res.body.data[0]).toHaveProperty('isLost');
     });
+
+    it('incluye coverPhotoUrl (primera foto) cuando hay fotos', async () => {
+      const created = await request(app)
+        .post('/api/v1/pets')
+        .send({ name: 'ConFoto', species: 'dog', sex: 'male' });
+      const petId = created.body.data.id as string;
+
+      await request(app)
+        .post(`/api/v1/pets/${petId}/photos`)
+        .attach('photo', Buffer.from('x'), { filename: 'a.jpg', contentType: 'image/jpeg' });
+
+      const listRes = await request(app).get('/api/v1/pets');
+      const item = (listRes.body.data as Array<{ id: string; coverPhotoUrl: string | null }>).find(
+        (p) => p.id === petId,
+      );
+      expect(item?.coverPhotoUrl).toBe('https://cdn.huellitas.app/pets/test-pet/photo.jpg');
+    });
   });
 
   describe('GET /api/v1/pets/:petId', () => {
@@ -198,6 +215,21 @@ describeIfDb('Pets API — Integration Tests', () => {
       const res = await request(app).patch(`/api/v1/pets/${created.body.data.id}`).send({});
       expect(res.status).toBe(422);
       expect(res.body.success).toBe(false);
+    });
+
+    it('permite actualizar isLost para el badge de perdido', async () => {
+      const created = await request(app)
+        .post('/api/v1/pets')
+        .send({ name: 'Perdido', species: 'cat', sex: 'female' });
+      const petId = created.body.data.id as string;
+
+      const patchRes = await request(app).patch(`/api/v1/pets/${petId}`).send({ isLost: true });
+      expect(patchRes.status).toBe(200);
+      expect(patchRes.body.data.isLost).toBe(true);
+
+      const getRes = await request(app).get(`/api/v1/pets/${petId}`);
+      expect(getRes.body.data.isLost).toBe(true);
+      expect(getRes.body.data.coverPhotoUrl).toBeNull();
     });
   });
 
