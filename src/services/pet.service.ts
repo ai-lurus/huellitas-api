@@ -47,7 +47,8 @@ export class PetService {
 
   async deletePet(petId: string, userId: string): Promise<void> {
     const pet = await this.repo.findById(petId);
-    if (!pet || pet.user_id !== userId) throw new NotFoundError('Pet not found');
+    if (!pet) throw new NotFoundError('Pet not found');
+    if (pet.user_id !== userId) throw new ForbiddenError();
     await this.repo.softDelete(petId);
   }
 

@@ -178,6 +178,27 @@ describeIfDb('Pets API — Integration Tests', () => {
       expect(res.body.data.name).toBe('NewName');
       expect(res.body.data.color).toBe('white');
     });
+
+    it('returns 403 when pet belongs to another user', async () => {
+      const { rows } = await pool.query<{ id: string }>(
+        `INSERT INTO pets (user_id, name, species, sex) VALUES ($1, $2, $3, $4) RETURNING id`,
+        [OTHER_USER_ID, 'Foreign', 'cat', 'female'],
+      );
+      const otherId = rows[0]?.id as string;
+
+      const res = await request(app).patch(`/api/v1/pets/${otherId}`).send({ name: 'Hack' });
+      expect(res.status).toBe(403);
+    });
+
+    it('returns 422 for empty patch body', async () => {
+      const created = await request(app)
+        .post('/api/v1/pets')
+        .send({ name: 'PatchEmpty', species: 'dog', sex: 'male' });
+
+      const res = await request(app).patch(`/api/v1/pets/${created.body.data.id}`).send({});
+      expect(res.status).toBe(422);
+      expect(res.body.success).toBe(false);
+    });
   });
 
   describe('DELETE /api/v1/pets/:petId', () => {
@@ -206,7 +227,7 @@ describeIfDb('Pets API — Integration Tests', () => {
       expect(res.status).toBe(404);
     });
 
-    it('returns 404 when pet belongs to another user', async () => {
+    it('returns 403 when pet belongs to another user', async () => {
       const { rows } = await pool.query<{ id: string }>(
         `INSERT INTO pets (user_id, name, species, sex) VALUES ($1, $2, $3, $4) RETURNING id`,
         [OTHER_USER_ID, 'Foreign', 'cat', 'female'],
@@ -214,7 +235,7 @@ describeIfDb('Pets API — Integration Tests', () => {
       const otherId = rows[0]?.id as string;
 
       const res = await request(app).delete(`/api/v1/pets/${otherId}`);
-      expect(res.status).toBe(404);
+      expect(res.status).toBe(403);
     });
   });
 
