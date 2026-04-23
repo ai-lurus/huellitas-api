@@ -93,9 +93,9 @@ describeIfDb('Pets API — Integration Tests', () => {
       expect(res.body.data.isLost).toBe(false);
     });
 
-    it('returns 400 for missing required fields', async () => {
+    it('returns 422 for missing required fields', async () => {
       const res = await request(app).post('/api/v1/pets').send({ breed: 'Labrador' });
-      expect(res.status).toBe(400);
+      expect(res.status).toBe(422);
       expect(res.body.success).toBe(false);
     });
 

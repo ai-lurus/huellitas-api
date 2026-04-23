@@ -5,7 +5,12 @@ import {
 } from '../repositories/user.repository';
 import { uploadFile } from './storage.service';
 import { NotFoundError } from '../utils/errors';
-import { PatchUserProfileInput } from '../schemas/user.schemas';
+import {
+  PatchUserProfileInput,
+  UpdateLocationInput,
+  UpdateUserSettingsInput,
+  RegisterPushTokenInput,
+} from '../schemas/user.schemas';
 
 export interface UserProfileDto {
   id: string;
@@ -51,12 +56,41 @@ export class UserService {
       name: body.name,
       image: body.image,
       onboardingCompleted: body.onboardingCompleted,
-      alertsEnabled: body.alertsEnabled,
-      location: body.location,
     };
     const row = await this.repo.updateProfile(userId, data);
     if (!row) throw new NotFoundError('Usuario no encontrado');
     return toDto(row);
+  }
+
+  async updateLocation(
+    userId: string,
+    body: UpdateLocationInput,
+  ): Promise<{ locationUpdated: boolean }> {
+    const exists = await this.repo.findProfileById(userId);
+    if (!exists) throw new NotFoundError('Usuario no encontrado');
+    const locationUpdated = await this.repo.updateLocationIfMoved(userId, body.lat, body.lng);
+    return { locationUpdated };
+  }
+
+  async updateSettings(userId: string, body: UpdateUserSettingsInput): Promise<UserProfileDto> {
+    const row = await this.repo.updateSettings(userId, {
+      alert_radius_km: body.alert_radius_km,
+      alerts_enabled: body.alerts_enabled,
+    });
+    if (!row) throw new NotFoundError('Usuario no encontrado');
+    return toDto(row);
+  }
+
+  async registerPushToken(userId: string, body: RegisterPushTokenInput): Promise<void> {
+    const exists = await this.repo.findProfileById(userId);
+    if (!exists) throw new NotFoundError('Usuario no encontrado');
+    await this.repo.upsertPushToken(userId, body.token, body.platform);
+  }
+
+  async deletePushTokens(userId: string): Promise<void> {
+    const exists = await this.repo.findProfileById(userId);
+    if (!exists) throw new NotFoundError('Usuario no encontrado');
+    await this.repo.deleteAllPushTokensForUser(userId);
   }
 
   async uploadAvatar(userId: string, file: Express.Multer.File): Promise<{ url: string }> {
