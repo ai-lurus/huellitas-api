@@ -61,13 +61,15 @@ describeIfDb('Users API — perfil y onboarding', () => {
       [TEST_USER_ID, 'Onboarding Test', TEST_EMAIL],
     );
     await pool.query(
-      `UPDATE "user" SET onboarding_completed_at = NULL, image = NULL WHERE id = $1`,
+      `UPDATE "user" SET onboarding_completed_at = NULL, image = NULL, location = NULL WHERE id = $1`,
       [TEST_USER_ID],
     );
+    await pool.query(`DELETE FROM push_tokens WHERE user_id = $1`, [TEST_USER_ID]);
     app = buildTestApp();
   });
 
   afterAll(async () => {
+    await pool.query(`DELETE FROM push_tokens WHERE user_id = $1`, [TEST_USER_ID]);
     await pool.query(`DELETE FROM "user" WHERE id = $1`, [TEST_USER_ID]);
     await pool.end();
   });
@@ -87,7 +89,7 @@ describeIfDb('Users API — perfil y onboarding', () => {
   describe('PATCH /api/v1/users/me', () => {
     it('rechaza cuerpo vacío', async () => {
       const res = await request(app).patch('/api/v1/users/me').send({});
-      expect(res.status).toBe(400);
+      expect(res.status).toBe(422);
     });
 
     it('actualiza nombre, imagen y marca onboarding completado', async () => {
@@ -95,7 +97,6 @@ describeIfDb('Users API — perfil y onboarding', () => {
         name: 'María Pérez',
         image: 'https://cdn.example.com/u/1.png',
         onboardingCompleted: true,
-        alertsEnabled: true,
       });
 
       expect(res.status).toBe(200);
@@ -103,16 +104,116 @@ describeIfDb('Users API — perfil y onboarding', () => {
       expect(res.body.data.image).toBe('https://cdn.example.com/u/1.png');
       expect(res.body.data.onboardingCompleted).toBe(true);
       expect(res.body.data.onboardingCompletedAt).toBeTruthy();
+    });
+  });
+
+  describe('PATCH /api/v1/users/me/settings', () => {
+    it('actualiza alert_radius_km y alerts_enabled', async () => {
+      const res = await request(app).patch('/api/v1/users/me/settings').send({
+        alert_radius_km: 8,
+        alerts_enabled: true,
+      });
+      expect(res.status).toBe(200);
+      expect(res.body.data.alertRadiusKm).toBe(8);
       expect(res.body.data.alertsEnabled).toBe(true);
     });
+  });
 
-    it('puede enviar ubicación con lat/lng', async () => {
+  describe('PATCH /api/v1/users/me/location', () => {
+    beforeEach(async () => {
+      await pool.query(`UPDATE "user" SET location = NULL WHERE id = $1`, [TEST_USER_ID]);
+    });
+
+    it('200 con coordenadas válidas y persiste geography', async () => {
+      const res = await request(app).patch('/api/v1/users/me/location').send({
+        lat: 19.4326,
+        lng: -99.1332,
+      });
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.locationUpdated).toBe(true);
+
+      const { rows } = await pool.query<{ wkt: string }>(
+        `SELECT ST_AsText(location::geometry) AS wkt FROM "user" WHERE id = $1`,
+        [TEST_USER_ID],
+      );
+      expect(rows[0]?.wkt).toContain('POINT');
+    });
+
+    it('422 con coordenadas inválidas', async () => {
+      const res = await request(app).patch('/api/v1/users/me/location').send({
+        lat: 91,
+        lng: -99.1332,
+      });
+      expect(res.status).toBe(422);
+      expect(res.body.success).toBe(false);
+    });
+
+    it('no actualiza si el movimiento es menor a 100 m', async () => {
+      await request(app).patch('/api/v1/users/me/location').send({
+        lat: 19.4326,
+        lng: -99.1332,
+      });
+      const smallDelta = 0.0003;
       const res = await request(app)
-        .patch('/api/v1/users/me')
+        .patch('/api/v1/users/me/location')
         .send({
-          location: { lat: 19.4326, lng: -99.1332 },
+          lat: 19.4326 + smallDelta,
+          lng: -99.1332,
         });
       expect(res.status).toBe(200);
+      expect(res.body.data.locationUpdated).toBe(false);
+    });
+  });
+
+  describe('POST /api/v1/users/me/push-token y DELETE', () => {
+    beforeEach(async () => {
+      await pool.query(`DELETE FROM push_tokens WHERE user_id = $1`, [TEST_USER_ID]);
+    });
+
+    it('POST hace upsert del token FCM', async () => {
+      const res = await request(app).post('/api/v1/users/me/push-token').send({
+        token: 'fcm-token-integration-test',
+        platform: 'android',
+      });
+      expect(res.status).toBe(204);
+
+      const { rows: first } = await pool.query(`SELECT id FROM push_tokens WHERE user_id = $1`, [
+        TEST_USER_ID,
+      ]);
+      expect(first).toHaveLength(1);
+
+      const res2 = await request(app).post('/api/v1/users/me/push-token').send({
+        token: 'fcm-token-integration-test',
+        platform: 'ios',
+      });
+      expect(res2.status).toBe(204);
+
+      const { rows: second } = await pool.query(
+        `SELECT platform FROM push_tokens WHERE user_id = $1 AND token = $2`,
+        [TEST_USER_ID, 'fcm-token-integration-test'],
+      );
+      expect(second).toHaveLength(1);
+      expect(second[0].platform).toBe('ios');
+    });
+
+    it('DELETE elimina todos los tokens del usuario', async () => {
+      await request(app).post('/api/v1/users/me/push-token').send({
+        token: 'token-a',
+        platform: 'android',
+      });
+      await request(app).post('/api/v1/users/me/push-token').send({
+        token: 'token-b',
+        platform: 'ios',
+      });
+
+      const del = await request(app).delete('/api/v1/users/me/push-token');
+      expect(del.status).toBe(204);
+
+      const { rows } = await pool.query(`SELECT id FROM push_tokens WHERE user_id = $1`, [
+        TEST_USER_ID,
+      ]);
+      expect(rows).toHaveLength(0);
     });
   });
 

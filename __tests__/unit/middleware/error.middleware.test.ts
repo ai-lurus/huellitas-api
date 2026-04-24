@@ -26,14 +26,14 @@ function makeMocks() {
 }
 
 describe('errorMiddleware', () => {
-  it('returns 400 for ZodError', () => {
+  it('returns 422 for ZodError', () => {
     const { req, res, next } = makeMocks();
     const zodErr = z.object({ name: z.string() }).safeParse({ name: 123 });
     const err = (zodErr as { error: ZodError }).error;
 
     errorMiddleware(err, req, res, next);
 
-    expect((res.status as jest.Mock).mock.calls[0][0]).toBe(400);
+    expect((res.status as jest.Mock).mock.calls[0][0]).toBe(422);
     expect((res.json as jest.Mock).mock.calls[0][0]).toMatchObject({
       success: false,
       error: 'Validation failed',

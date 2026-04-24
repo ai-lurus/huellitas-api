@@ -1,5 +1,7 @@
 import { PetRepository, Pet, CreatePetData, UpdatePetData } from '../repositories/pet.repository';
 import { uploadFile } from './storage.service';
+import { env } from '../config/env';
+import { normalizePetPhotoUrlString } from '../utils/pet-photo-urls';
 import {
   ForbiddenError,
   LimitExceededError,
@@ -47,7 +49,8 @@ export class PetService {
 
   async deletePet(petId: string, userId: string): Promise<void> {
     const pet = await this.repo.findById(petId);
-    if (!pet || pet.user_id !== userId) throw new NotFoundError('Pet not found');
+    if (!pet) throw new NotFoundError('Pet not found');
+    if (pet.user_id !== userId) throw new ForbiddenError();
     await this.repo.softDelete(petId);
   }
 
@@ -70,8 +73,11 @@ export class PetService {
       file.mimetype,
     );
 
-    const updated = await this.repo.addPhoto(petId, uploaded.url);
+    const r2Base = env.R2_PUBLIC_URL?.replace(/\/$/, '') ?? null;
+    const publicUrl = normalizePetPhotoUrlString(uploaded.url, r2Base) ?? uploaded.url;
+
+    const updated = await this.repo.addPhoto(petId, publicUrl);
     if (!updated) throw new NotFoundError('Pet not found');
-    return { url: uploaded.url, id: uploaded.id };
+    return { url: publicUrl, id: uploaded.id };
   }
 }

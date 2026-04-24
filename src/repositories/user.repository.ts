@@ -16,10 +16,15 @@ export interface UpdateUserProfileData {
   image?: string | null;
   /** true = marca completado ahora; false = borra marca (re-onboarding) */
   onboardingCompleted?: boolean;
-  alertsEnabled?: boolean;
-  /** Si se envía, actualiza el punto WGS84 en la columna geography */
-  location?: { lat: number; lng: number };
 }
+
+export interface UpdateUserSettingsData {
+  alert_radius_km?: number;
+  alerts_enabled?: boolean;
+}
+
+/** Distancia mínima en metros para persistir un nuevo punto GPS */
+export const LOCATION_UPDATE_MIN_METERS = 100;
 
 export class UserRepository {
   private pool: Pool;
@@ -56,13 +61,68 @@ export class UserRepository {
     } else if (data.onboardingCompleted === false) {
       sets.push(`onboarding_completed_at = NULL`);
     }
-    if (data.alertsEnabled !== undefined) {
-      sets.push(`alerts_enabled = $${i++}`);
-      values.push(data.alertsEnabled);
+
+    if (sets.length === 0) {
+      return this.findProfileById(userId);
     }
-    if (data.location !== undefined) {
-      sets.push(`location = ST_SetSRID(ST_MakePoint($${i++}, $${i++}), 4326)::geography`);
-      values.push(data.location.lng, data.location.lat);
+
+    sets.push(`updated_at = NOW()`);
+    values.push(userId);
+
+    const { rows } = await this.pool.query<UserProfileRow>(
+      `UPDATE "user"
+       SET ${sets.join(', ')}
+       WHERE id = $${i} AND deleted_at IS NULL
+       RETURNING id, name, email, image, onboarding_completed_at, alerts_enabled, alert_radius_km`,
+      values,
+    );
+    return rows[0] ?? null;
+  }
+
+  /**
+   * Actualiza `location` solo si no hay punto previo o el desplazamiento es > {@link LOCATION_UPDATE_MIN_METERS} m.
+   * Usa ST_MakePoint(lng, lat)::geography (con SRID 4326).
+   */
+  async updateLocationIfMoved(
+    userId: string,
+    lat: number,
+    lng: number,
+    minMeters: number = LOCATION_UPDATE_MIN_METERS,
+  ): Promise<boolean> {
+    const { rowCount } = await this.pool.query(
+      `UPDATE "user"
+       SET location = ST_SetSRID(ST_MakePoint($2, $3), 4326)::geography,
+           updated_at = NOW()
+       WHERE id = $1
+         AND deleted_at IS NULL
+         AND (
+           location IS NULL
+           OR ST_Distance(
+             location,
+             ST_SetSRID(ST_MakePoint($2, $3), 4326)::geography,
+             false
+           ) > $4
+         )`,
+      [userId, lng, lat, minMeters],
+    );
+    return (rowCount ?? 0) > 0;
+  }
+
+  async updateSettings(
+    userId: string,
+    data: UpdateUserSettingsData,
+  ): Promise<UserProfileRow | null> {
+    const sets: string[] = [];
+    const values: unknown[] = [];
+    let i = 1;
+
+    if (data.alert_radius_km !== undefined) {
+      sets.push(`alert_radius_km = $${i++}`);
+      values.push(data.alert_radius_km);
+    }
+    if (data.alerts_enabled !== undefined) {
+      sets.push(`alerts_enabled = $${i++}`);
+      values.push(data.alerts_enabled);
     }
 
     if (sets.length === 0) {
@@ -80,5 +140,20 @@ export class UserRepository {
       values,
     );
     return rows[0] ?? null;
+  }
+
+  async upsertPushToken(userId: string, token: string, platform: 'ios' | 'android'): Promise<void> {
+    await this.pool.query(
+      `INSERT INTO push_tokens (user_id, token, platform)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (token) DO UPDATE SET
+         user_id = EXCLUDED.user_id,
+         platform = EXCLUDED.platform`,
+      [userId, token, platform],
+    );
+  }
+
+  async deleteAllPushTokensForUser(userId: string): Promise<void> {
+    await this.pool.query(`DELETE FROM push_tokens WHERE user_id = $1`, [userId]);
   }
 }
