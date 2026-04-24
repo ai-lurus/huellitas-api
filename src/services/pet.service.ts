@@ -1,5 +1,7 @@
 import { PetRepository, Pet, CreatePetData, UpdatePetData } from '../repositories/pet.repository';
 import { uploadFile } from './storage.service';
+import { env } from '../config/env';
+import { normalizePetPhotoUrlString } from '../utils/pet-photo-urls';
 import {
   ForbiddenError,
   LimitExceededError,
@@ -71,8 +73,11 @@ export class PetService {
       file.mimetype,
     );
 
-    const updated = await this.repo.addPhoto(petId, uploaded.url);
+    const r2Base = env.R2_PUBLIC_URL?.replace(/\/$/, '') ?? null;
+    const publicUrl = normalizePetPhotoUrlString(uploaded.url, r2Base) ?? uploaded.url;
+
+    const updated = await this.repo.addPhoto(petId, publicUrl);
     if (!updated) throw new NotFoundError('Pet not found');
-    return { url: uploaded.url, id: uploaded.id };
+    return { url: publicUrl, id: uploaded.id };
   }
 }

@@ -1,3 +1,7 @@
+jest.mock('../../../src/config/env', () => ({
+  env: { R2_PUBLIC_URL: 'https://cdn.unit-test.example' },
+}));
+
 import { petToApi, petToListItem } from '../../../src/utils/pet.dto';
 import type { Pet } from '../../../src/repositories/pet.repository';
 
@@ -22,7 +26,19 @@ describe('pet.dto', () => {
   it('coverPhotoUrl es null sin fotos', () => {
     const dto = petToApi(basePet);
     expect(dto.coverPhotoUrl).toBeNull();
+    expect(dto.photos).toEqual([]);
     expect(petToListItem(basePet).coverPhotoUrl).toBeNull();
+  });
+
+  it('normaliza path relativo de BD con R2_PUBLIC_URL (mock)', () => {
+    const pet: Pet = {
+      ...basePet,
+      photos: ['/pets/only-relative.jpg'],
+    };
+    expect(petToApi(pet).photos).toEqual(['https://cdn.unit-test.example/pets/only-relative.jpg']);
+    expect(petToApi(pet).coverPhotoUrl).toBe(
+      'https://cdn.unit-test.example/pets/only-relative.jpg',
+    );
   });
 
   it('coverPhotoUrl es la primera URL de photos', () => {
@@ -32,5 +48,6 @@ describe('pet.dto', () => {
     };
     expect(petToApi(pet).coverPhotoUrl).toBe('https://cdn.example.com/a.jpg');
     expect(petToListItem(pet).coverPhotoUrl).toBe('https://cdn.example.com/a.jpg');
+    expect(petToApi(pet).photos).toHaveLength(2);
   });
 });

@@ -26,6 +26,8 @@ router.get('/', petController.listPets);
 router.post('/', validate(createPetSchema), petController.createPet);
 router.get('/:petId', petController.getPet);
 router.patch('/:petId', validate(updatePetSchema), petController.updatePet);
+/** Alias para clientes que usan PUT (p. ej. axios/fetch por defecto en “save”). */
+router.put('/:petId', validate(updatePetSchema), petController.updatePet);
 router.delete('/:petId', petController.deletePet);
 router.post('/:petId/photos', upload.single('photo'), petController.uploadPhoto);
 

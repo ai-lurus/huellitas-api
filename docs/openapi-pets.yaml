@@ -1,0 +1,132 @@
+openapi: 3.0.3
+info:
+  title: Huellitas API — Pets (fragmento)
+  version: '1.0'
+  description: |
+    Contrato canónico de galería (2026-04):
+
+    - **`photos`**: `string[]` — cada elemento es una URL absoluta `http(s)://…` lista para `<Image source={{ uri }} />`.
+    - **Orden**: igual al orden persistido en BD (orden de subida con `array_append`).
+    - **`coverPhotoUrl`**: duplicado útil; es `photos[0]` o `null` si no hay fotos.
+
+    **Autenticación:** el listado y detalle de mascotas requieren sesión (`requireAuth`). Las URLs en `photos` apuntan al **dominio público de R2** (`R2_PUBLIC_URL`); no requieren Bearer en la petición de imagen (bucket público). Si en el futuro el bucket es privado, habría que exponer URLs firmadas o un proxy `GET /api/v1/files/...` con auth.
+
+servers:
+  - url: http://localhost:3000
+
+paths:
+  /api/v1/pets/{petId}:
+    get:
+      summary: Detalle de mascota (dueño)
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: petId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PetSuccessResponse'
+              examples:
+                tresFotos:
+                  summary: Mascota con 3 fotos (anonimizado)
+                  value:
+                    success: true
+                    data:
+                      id: 51d91a16-0000-4000-8000-000000000001
+                      userId: usr_01HVZEXAMPLE00000000000000
+                      name: Michifus
+                      species: cat
+                      breed: Gato común
+                      color: null
+                      sex: male
+                      age: 3
+                      notes: null
+                      photos:
+                        - https://cdn.example.com/pets/51d91a16-0000-4000-8000-000000000001/a111.jpg
+                        - https://cdn.example.com/pets/51d91a16-0000-4000-8000-000000000001/b222.jpg
+                        - https://cdn.example.com/pets/51d91a16-0000-4000-8000-000000000001/c333.jpg
+                      coverPhotoUrl: https://cdn.example.com/pets/51d91a16-0000-4000-8000-000000000001/a111.jpg
+                      isLost: false
+                      createdAt: '2026-04-01T12:00:00.000Z'
+                      updatedAt: '2026-04-23T10:30:00.000Z'
+
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: better-auth.session_token
+  schemas:
+    Pet:
+      type: object
+      required:
+        - id
+        - userId
+        - name
+        - species
+        - photos
+        - coverPhotoUrl
+        - isLost
+      properties:
+        id:
+          type: string
+          format: uuid
+        userId:
+          type: string
+        name:
+          type: string
+        species:
+          type: string
+          enum: [dog, cat, bird, rabbit, other]
+        breed:
+          type: string
+          nullable: true
+        color:
+          type: string
+          nullable: true
+        sex:
+          type: string
+          nullable: true
+          enum: [male, female, unknown]
+        age:
+          type: integer
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+        photos:
+          type: array
+          description: URLs absolutas, orden de galería estable (orden BD).
+          items:
+            type: string
+            format: uri
+        coverPhotoUrl:
+          type: string
+          format: uri
+          nullable: true
+        isLost:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+          nullable: true
+        updatedAt:
+          type: string
+          format: date-time
+          nullable: true
+    PetSuccessResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          $ref: '#/components/schemas/Pet'

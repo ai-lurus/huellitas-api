@@ -196,6 +196,20 @@ describeIfDb('Pets API — Integration Tests', () => {
       expect(res.body.data.color).toBe('white');
     });
 
+    it('PUT actualiza igual que PATCH (compatibilidad cliente)', async () => {
+      const created = await request(app)
+        .post('/api/v1/pets')
+        .send({ name: 'PutPet', species: 'dog', sex: 'male' });
+      const id = created.body.data.id as string;
+
+      const res = await request(app)
+        .put(`/api/v1/pets/${id}`)
+        .send({ name: 'PutRenamed', color: 'black' });
+      expect(res.status).toBe(200);
+      expect(res.body.data.name).toBe('PutRenamed');
+      expect(res.body.data.color).toBe('black');
+    });
+
     it('returns 403 when pet belongs to another user', async () => {
       const { rows } = await pool.query<{ id: string }>(
         `INSERT INTO pets (user_id, name, species, sex) VALUES ($1, $2, $3, $4) RETURNING id`,
@@ -272,6 +286,88 @@ describeIfDb('Pets API — Integration Tests', () => {
   });
 
   describe('POST /api/v1/pets/:petId/photos', () => {
+    it('GET detalle: photos vacío y coverPhotoUrl null sin fotos', async () => {
+      const created = await request(app)
+        .post('/api/v1/pets')
+        .send({ name: 'SinFotos', species: 'dog', sex: 'male' });
+      const getRes = await request(app).get(`/api/v1/pets/${created.body.data.id}`);
+      expect(getRes.status).toBe(200);
+      expect(getRes.body.data.photos).toEqual([]);
+      expect(getRes.body.data.coverPhotoUrl).toBeNull();
+    });
+
+    it('GET detalle: 2+ URLs absolutas en el mismo orden que en BD', async () => {
+      const created = await request(app)
+        .post('/api/v1/pets')
+        .send({ name: 'Galeria', species: 'cat', sex: 'female' });
+      const petId = created.body.data.id as string;
+      const a = 'https://cdn.huellitas.app/demo/one.jpg';
+      const b = 'https://cdn.huellitas.app/demo/two.jpg';
+      await pool.query(`UPDATE pets SET photos = $1::text[] WHERE id = $2`, [[a, b], petId]);
+
+      const getRes = await request(app).get(`/api/v1/pets/${petId}`);
+      expect(getRes.status).toBe(200);
+      expect(getRes.body.data.photos).toEqual([a, b]);
+      (getRes.body.data.photos as string[]).forEach((u) => expect(u).toMatch(/^https:\/\//));
+    });
+
+    it('GET normaliza path relativo en BD usando R2_PUBLIC_URL', async () => {
+      const base = process.env['R2_PUBLIC_URL']?.replace(/\/$/, '');
+      if (!base) return;
+
+      const created = await request(app)
+        .post('/api/v1/pets')
+        .send({ name: 'LegacyPath', species: 'bird', sex: 'unknown' });
+      const petId = created.body.data.id as string;
+      await pool.query(`UPDATE pets SET photos = $1::text[] WHERE id = $2`, [
+        ['/pets/legacy.jpg'],
+        petId,
+      ]);
+
+      const getRes = await request(app).get(`/api/v1/pets/${petId}`);
+      expect(getRes.status).toBe(200);
+      expect(getRes.body.data.photos).toEqual([`${base}/pets/legacy.jpg`]);
+    });
+
+    it('varios POST /photos y GET inmediato devuelve todas las URLs en orden', async () => {
+      const { uploadFile } = jest.requireMock('../../src/services/storage.service') as {
+        uploadFile: jest.Mock;
+      };
+      let n = 0;
+      uploadFile.mockImplementation(async () => {
+        n += 1;
+        return { url: `https://cdn.seq.test/p-${n}.jpg`, id: `id-${n}` };
+      });
+      try {
+        const created = await request(app)
+          .post('/api/v1/pets')
+          .send({ name: 'Seq', species: 'rabbit', sex: 'unknown' });
+        const petId = created.body.data.id as string;
+
+        for (let i = 0; i < 3; i++) {
+          await request(app)
+            .post(`/api/v1/pets/${petId}/photos`)
+            .attach('photo', Buffer.from(`b${i}`), {
+              filename: `${i}.jpg`,
+              contentType: 'image/jpeg',
+            });
+        }
+
+        const getRes = await request(app).get(`/api/v1/pets/${petId}`);
+        expect(getRes.body.data.photos).toEqual([
+          'https://cdn.seq.test/p-1.jpg',
+          'https://cdn.seq.test/p-2.jpg',
+          'https://cdn.seq.test/p-3.jpg',
+        ]);
+        expect(getRes.body.data.coverPhotoUrl).toBe('https://cdn.seq.test/p-1.jpg');
+      } finally {
+        uploadFile.mockResolvedValue({
+          url: 'https://cdn.huellitas.app/pets/test-pet/photo.jpg',
+          id: 'mock-upload-id',
+        });
+      }
+    });
+
     it('uploads a photo and returns public url and id', async () => {
       const created = await request(app)
         .post('/api/v1/pets')
