@@ -55,6 +55,12 @@ describeIfDb('Users API — perfil y onboarding', () => {
     await pool.query(
       `ALTER TABLE "user" ADD COLUMN IF NOT EXISTS onboarding_completed_at TIMESTAMPTZ`,
     );
+    // Alineado con migración 005
+    await pool.query(
+      `ALTER TABLE "user"
+        ADD COLUMN IF NOT EXISTS notifications_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+        ADD COLUMN IF NOT EXISTS email_alerts_enabled BOOLEAN NOT NULL DEFAULT FALSE`,
+    );
     await pool.query(
       `INSERT INTO "user" (id, name, email) VALUES ($1, $2, $3)
        ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, email = EXCLUDED.email`,
@@ -78,11 +84,14 @@ describeIfDb('Users API — perfil y onboarding', () => {
     it('devuelve onboardingCompleted false cuando onboarding_completed_at es NULL', async () => {
       const res = await request(app).get('/api/v1/users/me');
       expect(res.status).toBe(200);
-      expect(res.body.success).toBe(true);
-      expect(res.body.data.id).toBe(TEST_USER_ID);
-      expect(res.body.data.onboardingCompleted).toBe(false);
-      expect(res.body.data.onboardingCompletedAt).toBeNull();
-      expect(res.body.data.name).toBe('Onboarding Test');
+      expect(res.body.id).toBe(TEST_USER_ID);
+      expect(res.body.onboardingCompleted).toBe(false);
+      expect(res.body.onboardingCompletedAt).toBeNull();
+      expect(res.body.name).toBe('Onboarding Test');
+      expect(res.body.alertRadiusKm).toBeGreaterThanOrEqual(1);
+      expect(res.body.alertRadiusKm).toBeLessThanOrEqual(10);
+      expect(typeof res.body.notificationsEnabled).toBe('boolean');
+      expect(typeof res.body.emailAlertsEnabled).toBe('boolean');
     });
   });
 
@@ -97,13 +106,21 @@ describeIfDb('Users API — perfil y onboarding', () => {
         name: 'María Pérez',
         image: 'https://cdn.example.com/u/1.png',
         onboardingCompleted: true,
+        alertRadiusKm: 5,
+        alertsEnabled: true,
+        notificationsEnabled: true,
+        emailAlertsEnabled: false,
       });
 
       expect(res.status).toBe(200);
-      expect(res.body.data.name).toBe('María Pérez');
-      expect(res.body.data.image).toBe('https://cdn.example.com/u/1.png');
-      expect(res.body.data.onboardingCompleted).toBe(true);
-      expect(res.body.data.onboardingCompletedAt).toBeTruthy();
+      expect(res.body.name).toBe('María Pérez');
+      expect(res.body.image).toBe('https://cdn.example.com/u/1.png');
+      expect(res.body.onboardingCompleted).toBe(true);
+      expect(res.body.onboardingCompletedAt).toBeTruthy();
+      expect(res.body.alertRadiusKm).toBe(5);
+      expect(res.body.alertsEnabled).toBe(true);
+      expect(res.body.notificationsEnabled).toBe(true);
+      expect(res.body.emailAlertsEnabled).toBe(false);
     });
   });
 
@@ -223,13 +240,13 @@ describeIfDb('Users API — perfil y onboarding', () => {
       const v1 = await request(app).get('/api/v1/users/me');
       expect(alias.status).toBe(200);
       expect(v1.status).toBe(200);
-      expect(alias.body.data).toEqual(v1.body.data);
+      expect(alias.body).toEqual(v1.body);
     });
 
     it('PATCH /users/me persiste igual que la ruta versionada', async () => {
       const res = await request(app).patch('/users/me').send({ name: 'Alias User' });
       expect(res.status).toBe(200);
-      expect(res.body.data.name).toBe('Alias User');
+      expect(res.body.name).toBe('Alias User');
     });
   });
 
@@ -245,6 +262,19 @@ describeIfDb('Users API — perfil y onboarding', () => {
       expect(res.status).toBe(201);
       expect(res.body.success).toBe(true);
       expect(res.body.data.url).toContain('https://');
+    });
+  });
+
+  describe('DELETE /api/v1/users/me', () => {
+    it('soft-deletea el usuario y retorna 204', async () => {
+      const res = await request(app).delete('/api/v1/users/me');
+      expect(res.status).toBe(204);
+
+      const { rows } = await pool.query<{ deleted_at: Date | null }>(
+        `SELECT deleted_at FROM "user" WHERE id = $1`,
+        [TEST_USER_ID],
+      );
+      expect(rows[0]?.deleted_at).toBeTruthy();
     });
   });
 });

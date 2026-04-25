@@ -9,6 +9,8 @@ export interface UserProfileRow {
   onboarding_completed_at: Date | null;
   alerts_enabled: boolean;
   alert_radius_km: number;
+  notifications_enabled: boolean;
+  email_alerts_enabled: boolean;
 }
 
 export interface UpdateUserProfileData {
@@ -21,6 +23,8 @@ export interface UpdateUserProfileData {
 export interface UpdateUserSettingsData {
   alert_radius_km?: number;
   alerts_enabled?: boolean;
+  notifications_enabled?: boolean;
+  email_alerts_enabled?: boolean;
 }
 
 /** Distancia mínima en metros para persistir un nuevo punto GPS */
@@ -35,7 +39,8 @@ export class UserRepository {
 
   async findProfileById(userId: string): Promise<UserProfileRow | null> {
     const { rows } = await this.pool.query<UserProfileRow>(
-      `SELECT id, name, email, image, onboarding_completed_at, alerts_enabled, alert_radius_km
+      `SELECT id, name, email, image, onboarding_completed_at, alerts_enabled, alert_radius_km,
+              notifications_enabled, email_alerts_enabled
        FROM "user"
        WHERE id = $1 AND deleted_at IS NULL`,
       [userId],
@@ -73,7 +78,8 @@ export class UserRepository {
       `UPDATE "user"
        SET ${sets.join(', ')}
        WHERE id = $${i} AND deleted_at IS NULL
-       RETURNING id, name, email, image, onboarding_completed_at, alerts_enabled, alert_radius_km`,
+       RETURNING id, name, email, image, onboarding_completed_at, alerts_enabled, alert_radius_km,
+                 notifications_enabled, email_alerts_enabled`,
       values,
     );
     return rows[0] ?? null;
@@ -124,6 +130,14 @@ export class UserRepository {
       sets.push(`alerts_enabled = $${i++}`);
       values.push(data.alerts_enabled);
     }
+    if (data.notifications_enabled !== undefined) {
+      sets.push(`notifications_enabled = $${i++}`);
+      values.push(data.notifications_enabled);
+    }
+    if (data.email_alerts_enabled !== undefined) {
+      sets.push(`email_alerts_enabled = $${i++}`);
+      values.push(data.email_alerts_enabled);
+    }
 
     if (sets.length === 0) {
       return this.findProfileById(userId);
@@ -136,10 +150,39 @@ export class UserRepository {
       `UPDATE "user"
        SET ${sets.join(', ')}
        WHERE id = $${i} AND deleted_at IS NULL
-       RETURNING id, name, email, image, onboarding_completed_at, alerts_enabled, alert_radius_km`,
+       RETURNING id, name, email, image, onboarding_completed_at, alerts_enabled, alert_radius_km,
+                 notifications_enabled, email_alerts_enabled`,
       values,
     );
     return rows[0] ?? null;
+  }
+
+  async softDeleteUser(userId: string): Promise<void> {
+    await this.pool.query('BEGIN');
+    try {
+      // Invalidate active sessions/tokens
+      await this.pool.query(`DELETE FROM session WHERE user_id = $1`, [userId]);
+      await this.pool.query(`DELETE FROM push_tokens WHERE user_id = $1`, [userId]);
+
+      // Soft-delete owned resources
+      await this.pool.query(
+        `UPDATE pets SET deleted_at = NOW() WHERE user_id = $1 AND deleted_at IS NULL`,
+        [userId],
+      );
+      await this.pool.query(
+        `UPDATE lost_reports SET deleted_at = NOW() WHERE user_id = $1 AND deleted_at IS NULL`,
+        [userId],
+      );
+
+      await this.pool.query(
+        `UPDATE "user" SET deleted_at = NOW(), updated_at = NOW() WHERE id = $1 AND deleted_at IS NULL`,
+        [userId],
+      );
+      await this.pool.query('COMMIT');
+    } catch (e) {
+      await this.pool.query('ROLLBACK');
+      throw e;
+    }
   }
 
   async upsertPushToken(userId: string, token: string, platform: 'ios' | 'android'): Promise<void> {

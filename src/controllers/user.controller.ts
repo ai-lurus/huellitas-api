@@ -18,7 +18,7 @@ function getUserId(req: Request): string {
 export async function getMe(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const profile = await service.getProfile(getUserId(req));
-    res.json({ success: true, data: profile });
+    res.json(profile);
   } catch (err) {
     next(err);
   }
@@ -26,9 +26,18 @@ export async function getMe(req: Request, res: Response, next: NextFunction): Pr
 
 export async function patchMe(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    const body = req.body as PatchUserProfileInput;
+    const body = (req.body ?? {}) as PatchUserProfileInput;
+
+    // multipart/form-data: si viene archivo `image`, primero lo subimos y lo tratamos como `image: <url>`
+    const grouped = req.files as Record<string, Express.Multer.File[]> | undefined;
+    const file = grouped?.['image']?.[0] ?? grouped?.['photo']?.[0] ?? grouped?.['file']?.[0];
+    if (file) {
+      const { url } = await service.uploadAvatar(getUserId(req), file);
+      body.image = url;
+    }
     const profile = await service.updateProfile(getUserId(req), body);
-    res.json({ success: true, data: profile });
+    // Respuesta plana (shape igual a GET /users/me)
+    res.json(profile);
   } catch (err) {
     next(err);
   }
@@ -96,6 +105,15 @@ export async function deletePushToken(
 ): Promise<void> {
   try {
     await service.deletePushTokens(getUserId(req));
+    res.status(204).send();
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function deleteMe(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    await service.deleteAccount(getUserId(req));
     res.status(204).send();
   } catch (err) {
     next(err);

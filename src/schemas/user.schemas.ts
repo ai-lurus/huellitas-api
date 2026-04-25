@@ -1,5 +1,13 @@
 import { z } from 'zod';
 
+function booleanFromString(value: unknown): unknown {
+  if (typeof value !== 'string') return value;
+  const v = value.trim().toLowerCase();
+  if (v === 'true') return true;
+  if (v === 'false') return false;
+  return value;
+}
+
 export const updateLocationSchema = z
   .object({
     lat: z.number().min(-90).max(90),
@@ -11,7 +19,7 @@ export type UpdateLocationInput = z.infer<typeof updateLocationSchema>;
 
 export const updateUserSettingsSchema = z
   .object({
-    alert_radius_km: z.number().int().min(1).max(500).optional(),
+    alert_radius_km: z.number().int().min(1).max(10).optional(),
     alerts_enabled: z.boolean().optional(),
   })
   .strict()
@@ -35,6 +43,10 @@ export const patchUserProfileSchema = z
     name: z.string().min(1).max(200).optional(),
     image: z.union([z.string().url(), z.null()]).optional(),
     onboardingCompleted: z.boolean().optional(),
+    alertRadiusKm: z.coerce.number().int().min(1).max(10).optional(),
+    alertsEnabled: z.preprocess(booleanFromString, z.boolean()).optional(),
+    notificationsEnabled: z.preprocess(booleanFromString, z.boolean()).optional(),
+    emailAlertsEnabled: z.preprocess(booleanFromString, z.boolean()).optional(),
   })
   .strict()
   .refine((body) => Object.keys(body).length > 0, {

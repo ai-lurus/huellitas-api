@@ -114,6 +114,24 @@ describe('errorMiddleware', () => {
     expect(JSON.stringify(body)).not.toContain('secret details');
   });
 
+  it('logs stack trace for unknown errors', () => {
+    const { req, res, next } = makeMocks();
+    const { logger } = jest.requireMock('../../../src/config/logger') as {
+      logger: { warn: jest.Mock; error: jest.Mock };
+    };
+
+    const err = new Error('boom');
+    errorMiddleware(err, req, res, next);
+
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.objectContaining({
+        requestId: 'test-id',
+        message: 'Unexpected error',
+        stack: expect.any(String),
+      }),
+    );
+  });
+
   it('includes userId in logs when user is attached', () => {
     const { req, res, next } = makeMocks();
     (req as unknown as Record<string, unknown>)['user'] = {

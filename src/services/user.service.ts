@@ -3,7 +3,7 @@ import {
   UserProfileRow,
   UpdateUserProfileData,
 } from '../repositories/user.repository';
-import { uploadFile } from './storage.service';
+import { deleteFile, uploadFile } from './storage.service';
 import { NotFoundError } from '../utils/errors';
 import {
   PatchUserProfileInput,
@@ -21,6 +21,8 @@ export interface UserProfileDto {
   onboardingCompletedAt: string | null;
   alertsEnabled: boolean;
   alertRadiusKm: number;
+  notificationsEnabled: boolean;
+  emailAlertsEnabled: boolean;
 }
 
 function toDto(row: UserProfileRow): UserProfileDto {
@@ -35,6 +37,8 @@ function toDto(row: UserProfileRow): UserProfileDto {
       : null,
     alertsEnabled: row.alerts_enabled,
     alertRadiusKm: row.alert_radius_km,
+    notificationsEnabled: row.notifications_enabled,
+    emailAlertsEnabled: row.email_alerts_enabled,
   };
 }
 
@@ -52,14 +56,35 @@ export class UserService {
   }
 
   async updateProfile(userId: string, body: PatchUserProfileInput): Promise<UserProfileDto> {
+    const existing = await this.repo.findProfileById(userId);
+    if (!existing) throw new NotFoundError('Usuario no encontrado');
+
     const data: UpdateUserProfileData = {
       name: body.name,
       image: body.image,
       onboardingCompleted: body.onboardingCompleted,
     };
+
+    // Si el cliente manda `image: null` en JSON, se borra la foto (y se intenta borrar el archivo).
+    if (body.image === null && existing.image) {
+      try {
+        await deleteFile(existing.image);
+      } catch {
+        // best-effort: no bloquea actualización de perfil
+      }
+    }
+
     const row = await this.repo.updateProfile(userId, data);
     if (!row) throw new NotFoundError('Usuario no encontrado');
-    return toDto(row);
+
+    // Settings (en el mismo PATCH /users/me)
+    const settingsRow = await this.repo.updateSettings(userId, {
+      alert_radius_km: body.alertRadiusKm,
+      alerts_enabled: body.alertsEnabled,
+      notifications_enabled: body.notificationsEnabled,
+      email_alerts_enabled: body.emailAlertsEnabled,
+    });
+    return toDto(settingsRow ?? row);
   }
 
   async updateLocation(
@@ -104,7 +129,28 @@ export class UserService {
       file.mimetype,
     );
 
+    if (existing.image) {
+      try {
+        await deleteFile(existing.image);
+      } catch {
+        // best-effort
+      }
+    }
+
     await this.repo.updateProfile(userId, { image: url });
     return { url };
+  }
+
+  async deleteAccount(userId: string): Promise<void> {
+    const existing = await this.repo.findProfileById(userId);
+    if (!existing) throw new NotFoundError('Usuario no encontrado');
+    await this.repo.softDeleteUser(userId);
+    if (existing.image) {
+      try {
+        await deleteFile(existing.image);
+      } catch {
+        // best-effort
+      }
+    }
   }
 }

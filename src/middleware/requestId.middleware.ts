@@ -5,6 +5,6 @@ export function requestIdMiddleware(req: Request, res: Response, next: NextFunct
   const id = (req.headers['x-request-id'] as string | undefined) ?? randomUUID();
   req.headers['x-request-id'] = id;
   req.requestId = id;
-  res.setHeader('x-request-id', id);
+  res.setHeader('X-Request-ID', id);
   next();
 }

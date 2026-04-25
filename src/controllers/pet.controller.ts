@@ -16,6 +16,13 @@ function petIdParam(req: Request): string {
   return req.params['petId'] as string;
 }
 
+function getUploadedPhotoFile(req: Request): Express.Multer.File | undefined {
+  if (req.file) return req.file;
+  const grouped = req.files as Record<string, Express.Multer.File[]> | undefined;
+  if (!grouped) return undefined;
+  return grouped['photo']?.[0] ?? grouped['image']?.[0] ?? grouped['file']?.[0];
+}
+
 function createBodyToRepo(body: CreatePetInput): Omit<CreatePetData, 'user_id'> {
   const { age, ...rest } = body;
   return {
@@ -81,11 +88,12 @@ export async function deletePet(req: Request, res: Response, next: NextFunction)
 
 export async function uploadPhoto(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    if (!req.file) {
+    const file = getUploadedPhotoFile(req);
+    if (!file) {
       res.status(400).json({ success: false, error: 'No file provided' });
       return;
     }
-    const result = await service.addPhoto(petIdParam(req), getUserId(req), req.file);
+    const result = await service.addPhoto(petIdParam(req), getUserId(req), file);
     res.status(201).json({ success: true, data: result });
   } catch (err) {
     next(err);

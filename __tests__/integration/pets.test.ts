@@ -397,5 +397,20 @@ describeIfDb('Pets API — Integration Tests', () => {
       const res = await request(app).post(`/api/v1/pets/${created.body.data.id}/photos`);
       expect(res.status).toBe(400);
     });
+
+    it('acepta el archivo en el campo multipart `image` (alias de `photo`)', async () => {
+      const created = await request(app)
+        .post('/api/v1/pets')
+        .send({ name: 'CampoImage', species: 'cat', sex: 'female' });
+      const petId = created.body.data.id as string;
+
+      const res = await request(app)
+        .post(`/api/v1/pets/${petId}/photos`)
+        .attach('image', Buffer.from('fake'), { filename: 'x.webp', contentType: 'image/webp' });
+
+      expect(res.status).toBe(201);
+      const getRes = await request(app).get(`/api/v1/pets/${petId}`);
+      expect(getRes.body.data.photos).toHaveLength(1);
+    });
   });
 });
