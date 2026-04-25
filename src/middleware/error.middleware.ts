@@ -5,6 +5,15 @@ import * as Sentry from '@sentry/node';
 import { AppError } from '../utils/errors';
 import { logger } from '../config/logger';
 
+function toError(err: unknown): Error {
+  if (err instanceof Error) return err;
+  try {
+    return new Error(typeof err === 'string' ? err : JSON.stringify(err));
+  } catch {
+    return new Error('Unknown error');
+  }
+}
+
 export function errorMiddleware(
   err: unknown,
   req: Request,
@@ -67,8 +76,16 @@ export function errorMiddleware(
     return;
   }
 
-  Sentry.captureException(err, { user: userId ? { id: userId } : undefined });
-  logger.error({ requestId, userId, err, message: 'Unexpected error' });
+  const e = toError(err);
+  Sentry.captureException(e, { user: userId ? { id: userId } : undefined });
+  logger.error({
+    requestId,
+    userId,
+    message: 'Unexpected error',
+    errorName: e.name,
+    errorMessage: e.message,
+    stack: e.stack,
+  });
   res.status(500).json({
     success: false,
     error: 'Internal server error',
