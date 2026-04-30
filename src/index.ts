@@ -13,6 +13,7 @@ import { auth } from './config/auth';
 import { apiRouter } from './routes/index';
 import { usersRouter } from './routes/users.routes';
 import { requestIdMiddleware } from './middleware/requestId.middleware';
+import { httpLoggerMiddleware } from './middleware/http-logger.middleware';
 import { errorMiddleware } from './middleware/error.middleware';
 
 const app = express();
@@ -41,6 +42,7 @@ app.use(
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(requestIdMiddleware);
+app.use(httpLoggerMiddleware);
 
 // Better Auth — límite por IP (get-session en el cliente puede dispararse a menudo)
 const authLimiter = rateLimit({
