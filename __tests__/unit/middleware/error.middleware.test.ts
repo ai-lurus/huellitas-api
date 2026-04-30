@@ -102,7 +102,7 @@ describe('errorMiddleware', () => {
     expect((res.status as jest.Mock).mock.calls[0][0]).toBe(500);
     expect((res.json as jest.Mock).mock.calls[0][0]).toEqual({
       success: false,
-      error: 'Internal server error',
+      error: 'Internal Server Error',
     });
   });
 

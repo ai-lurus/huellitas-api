@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { auth } from '../config/auth';
+import * as Sentry from '@sentry/node';
 
 export async function requireAuth(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
@@ -11,6 +12,8 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     }
 
     req.user = session.user as Request['user'];
+    // Attach user to Sentry scope (no PII).
+    Sentry.setUser({ id: session.user.id });
     next();
   } catch (err) {
     next(err);

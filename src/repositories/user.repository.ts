@@ -199,4 +199,16 @@ export class UserRepository {
   async deleteAllPushTokensForUser(userId: string): Promise<void> {
     await this.pool.query(`DELETE FROM push_tokens WHERE user_id = $1`, [userId]);
   }
+
+  async listPushTokensForUser(userId: string): Promise<string[]> {
+    const { rows } = await this.pool.query<{ token: string }>(
+      `SELECT token FROM push_tokens WHERE user_id = $1`,
+      [userId],
+    );
+    return rows.map((r) => r.token).filter(Boolean);
+  }
+
+  async deletePushToken(token: string): Promise<void> {
+    await this.pool.query(`DELETE FROM push_tokens WHERE token = $1`, [token]);
+  }
 }

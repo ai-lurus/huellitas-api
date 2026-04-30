@@ -1,67 +1,49 @@
 import 'dotenv/config';
-import { corsAllowedOrigins } from './config/env'; // valida env y expone orígenes CORS
 import './config/sentry'; // Must be before express import
 import * as Sentry from '@sentry/node';
 import express from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
-import { rateLimit } from 'express-rate-limit';
 import { toNodeHandler } from 'better-auth/node';
 import { logger } from './config/logger';
-import { checkDbConnection } from './db/index';
 import { auth } from './config/auth';
+import { corsOptions, helmetOptions } from './config/security';
 import { apiRouter } from './routes/index';
 import { usersRouter } from './routes/users.routes';
+import { healthRouter } from './routes/health.routes';
+import { docsRouter } from './routes/docs.routes';
+import { warmupPool } from './db/index';
 import { requestIdMiddleware } from './middleware/requestId.middleware';
+import { httpLoggerMiddleware } from './middleware/http-logger.middleware';
 import { errorMiddleware } from './middleware/error.middleware';
+import { authLimiter } from './middleware/rateLimit.middleware';
+import { scheduleExpireReports } from './jobs/expireReports.job';
+import { sentryContextMiddleware } from './middleware/sentry-context.middleware';
 
 const app = express();
 const PORT = process.env['PORT'] ?? 3000;
 
 // Security middleware
-app.use(helmet());
-app.use(
-  cors({
-    origin: corsAllowedOrigins,
-    credentials: true,
-  }),
-);
-
-// Rate limiting
-app.use(
-  rateLimit({
-    windowMs: 60 * 1000,
-    max: 100,
-    standardHeaders: true,
-    legacyHeaders: false,
-  }),
-);
+app.use(helmet(helmetOptions));
+app.use(cors(corsOptions));
 
 // Request parsing
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(requestIdMiddleware);
+app.use(sentryContextMiddleware);
+app.use(httpLoggerMiddleware);
 
-// Better Auth — límite por IP (get-session en el cliente puede dispararse a menudo)
-const authLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: process.env['NODE_ENV'] === 'production' ? 60 : 300,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { success: false, error: 'Too many requests, please try again later.' },
-});
+// Better Auth — 5 req/min por IP
 app.all('/api/auth/*', authLimiter, toNodeHandler(auth));
 
-// Health check (no auth required)
-app.get('/health', async (_req: express.Request, res: express.Response) => {
-  const dbOk = await checkDbConnection();
-  const status = dbOk ? 'ok' : 'degraded';
-  res.status(dbOk ? 200 : 503).json({
-    status,
-    version: process.env['npm_package_version'] ?? '0.1.0',
-    timestamp: new Date().toISOString(),
-  });
-});
+// Info + Health check (no auth required, no rate limit)
+app.use('/', healthRouter);
+
+// Swagger (non-production only)
+if (process.env['NODE_ENV'] !== 'production') {
+  app.use('/api', docsRouter);
+}
 
 // API routes
 app.use('/api/v1', apiRouter);
@@ -77,5 +59,9 @@ app.use(errorMiddleware);
 app.listen(PORT, () => {
   logger.info(`🐾 Huellitas API running on port ${PORT}`);
 });
+
+// Background jobs
+scheduleExpireReports();
+void warmupPool(2);
 
 export { app };
