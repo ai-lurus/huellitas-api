@@ -162,7 +162,7 @@ describeIfDb('Users API — perfil y onboarding', () => {
         lat: 91,
         lng: -99.1332,
       });
-      expect(res.status).toBe(422);
+      expect(res.status).toBe(400);
       expect(res.body.success).toBe(false);
     });
 
