@@ -12,6 +12,16 @@ export const createLostReportSchema = z
 
 export type CreateLostReportInput = z.infer<typeof createLostReportSchema>;
 
+export const createSightingSchema = z
+  .object({
+    lat: z.coerce.number().min(-90).max(90),
+    lng: z.coerce.number().min(-180).max(180),
+    message: z.string().max(500).optional(),
+  })
+  .strict();
+
+export type CreateSightingInput = z.infer<typeof createSightingSchema>;
+
 export const nearbyLostReportsQuerySchema = z
   .object({
     lat: z.coerce.number().min(-90).max(90),

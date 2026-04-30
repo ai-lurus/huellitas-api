@@ -27,6 +27,31 @@ export interface LostReportRow {
   updated_at: Date;
 }
 
+export interface LostReportDetailRow {
+  id: string;
+  pet_id: string;
+  user_id: string;
+  last_seen_at: Date;
+  status: 'active' | 'resolved';
+  message: string | null;
+  created_at: Date;
+  updated_at: Date;
+  pet_name: string;
+  pet_species: 'dog' | 'cat' | 'bird' | 'rabbit' | 'other';
+}
+
+export interface SightingRow {
+  id: string;
+  report_id: string;
+  reporter_id: string;
+  photos: string[];
+  message: string | null;
+  seen_at: Date;
+  created_at: Date;
+  reporter_name: string;
+  reporter_image: string | null;
+}
+
 export interface UserPushTokenRow {
   token: string;
   user_id: string;
@@ -37,6 +62,106 @@ export class LostReportRepository {
 
   constructor(pool?: Pool) {
     this.pool = pool ?? getPool();
+  }
+
+  async findById(reportId: string): Promise<LostReportRow | null> {
+    const { rows } = await this.pool.query<LostReportRow>(
+      `
+      SELECT id, pet_id, user_id, last_seen_at, status, message, created_at, updated_at
+      FROM lost_reports
+      WHERE id = $1 AND deleted_at IS NULL
+      `,
+      [reportId],
+    );
+    return rows[0] ?? null;
+  }
+
+  async findDetailById(reportId: string): Promise<LostReportDetailRow | null> {
+    const { rows } = await this.pool.query<LostReportDetailRow>(
+      `
+      SELECT
+        lr.id, lr.pet_id, lr.user_id, lr.last_seen_at, lr.status, lr.message, lr.created_at, lr.updated_at,
+        p.name AS pet_name,
+        p.species AS pet_species
+      FROM lost_reports lr
+      JOIN pets p ON p.id = lr.pet_id AND p.deleted_at IS NULL
+      WHERE lr.id = $1 AND lr.deleted_at IS NULL
+      `,
+      [reportId],
+    );
+    return rows[0] ?? null;
+  }
+
+  async listSightingsForReport(reportId: string): Promise<SightingRow[]> {
+    const { rows } = await this.pool.query<SightingRow>(
+      `
+      SELECT
+        s.id,
+        s.report_id,
+        s.reporter_id,
+        COALESCE(s.photos, '{}') AS photos,
+        s.message,
+        s.seen_at,
+        s.created_at,
+        u.name AS reporter_name,
+        u.image AS reporter_image
+      FROM sightings s
+      JOIN "user" u ON u.id = s.reporter_id AND u.deleted_at IS NULL
+      WHERE s.report_id = $1
+      ORDER BY s.seen_at DESC, s.created_at DESC
+      `,
+      [reportId],
+    );
+    return rows;
+  }
+
+  async createSighting(params: {
+    reportId: string;
+    reporterId: string;
+    lat: number;
+    lng: number;
+    message?: string;
+    photos: string[];
+  }): Promise<{ id: string }> {
+    const { rows } = await this.pool.query<{ id: string }>(
+      `
+      INSERT INTO sightings (report_id, reporter_id, location, photo_url, photos, message, seen_at)
+      VALUES (
+        $1,
+        $2,
+        ST_SetSRID(ST_MakePoint($3, $4), 4326)::geography,
+        $5,
+        $6,
+        $7,
+        NOW()
+      )
+      RETURNING id
+      `,
+      [
+        params.reportId,
+        params.reporterId,
+        params.lng,
+        params.lat,
+        params.photos[0] ?? null,
+        params.photos,
+        params.message ?? null,
+      ],
+    );
+    const created = rows[0];
+    if (!created) throw new Error('Failed to create sighting');
+    return created;
+  }
+
+  async resolveReport(reportId: string): Promise<boolean> {
+    const { rowCount } = await this.pool.query(
+      `
+      UPDATE lost_reports
+      SET status = 'resolved', updated_at = NOW()
+      WHERE id = $1 AND deleted_at IS NULL AND status <> 'resolved'
+      `,
+      [reportId],
+    );
+    return (rowCount ?? 0) > 0;
   }
 
   async create(data: {

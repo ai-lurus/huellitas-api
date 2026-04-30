@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { LostReportService } from '../services/lost-report.service';
 import {
   createLostReportSchema,
+  createSightingSchema,
   nearbyLostReportsQuerySchema,
 } from '../schemas/lost-report.schemas';
 import { UnauthorizedError, ValidationError } from '../utils/errors';
@@ -31,6 +32,23 @@ export async function getNearbyLostReports(
       radiusKm: radius,
       species,
     });
+    res.json({ success: true, data });
+  } catch (err) {
+    next(err);
+  }
+}
+
+function reportIdParam(req: Request): string {
+  return req.params['id'] as string;
+}
+
+export async function getLostReportDetail(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const data = await service.getDetail(reportIdParam(req));
     res.json({ success: true, data });
   } catch (err) {
     next(err);
@@ -71,6 +89,47 @@ export async function postLostReport(
         createdAt: new Date(created.created_at).toISOString(),
       },
     });
+  } catch (err) {
+    next(err);
+  }
+}
+
+function getUploadedPhotos(req: Request): Express.Multer.File[] {
+  const grouped = req.files as
+    | Record<string, Express.Multer.File[]>
+    | Express.Multer.File[]
+    | undefined;
+  if (!grouped) return [];
+  if (Array.isArray(grouped)) return grouped;
+  return grouped['photos'] ?? grouped['photo'] ?? grouped['image'] ?? grouped['file'] ?? [];
+}
+
+export async function postSighting(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const parsed = createSightingSchema.safeParse(req.body);
+    if (!parsed.success) {
+      throw new ValidationError('Coordenadas inválidas');
+    }
+
+    const created = await service.addSighting({
+      reportId: reportIdParam(req),
+      reporterId: getUserId(req),
+      lat: parsed.data.lat,
+      lng: parsed.data.lng,
+      message: parsed.data.message,
+      files: getUploadedPhotos(req),
+    });
+
+    res.status(201).json({ success: true, data: created });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function patchResolve(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    await service.resolve({ reportId: reportIdParam(req), userId: getUserId(req) });
+    res.status(204).send();
   } catch (err) {
     next(err);
   }
