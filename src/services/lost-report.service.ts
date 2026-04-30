@@ -6,9 +6,10 @@ import {
   SightingRow,
 } from '../repositories/lost-report.repository';
 import { PetRepository } from '../repositories/pet.repository';
-import { ForbiddenError, NotFoundError } from '../utils/errors';
-import { ExpoPushService } from './expo-push.service';
+import { ForbiddenError, NotFoundError, ValidationError } from '../utils/errors';
 import { uploadFile } from './storage.service';
+import { notificationsService } from './notifications.service';
+import { createHash } from 'crypto';
 
 export interface NearbyLostReportDto {
   id: string;
@@ -24,8 +25,9 @@ export interface NearbyLostReportDto {
 
 export interface SightingDto {
   id: string;
-  reporter: { id: string; name: string; image: string | null };
-  photos: string[];
+  reporter: { id: string };
+  location: { lat: number; lng: number };
+  photo: string | null;
   message: string | null;
   seenAt: string;
 }
@@ -57,22 +59,26 @@ function toNearbyDto(row: NearbyLostReportRow): NearbyLostReportDto {
 function toSightingDto(row: SightingRow): SightingDto {
   return {
     id: row.id,
-    reporter: { id: row.reporter_id, name: row.reporter_name, image: row.reporter_image },
-    photos: row.photos ?? [],
+    reporter: { id: anonymizeReporterId(row.report_id, row.reporter_id) },
+    location: { lat: Number(row.lat), lng: Number(row.lng) },
+    photo: (row.photos ?? [])[0] ?? null,
     message: row.message,
     seenAt: new Date(row.seen_at).toISOString(),
   };
 }
 
+function anonymizeReporterId(reportId: string, reporterId: string): string {
+  const h = createHash('sha256').update(`${reportId}:${reporterId}`).digest('hex').slice(0, 16);
+  return `anon_${h}`;
+}
+
 export class LostReportService {
   private repo: LostReportRepository;
   private pets: PetRepository;
-  private push: ExpoPushService;
 
   constructor(repo?: LostReportRepository) {
     this.repo = repo ?? new LostReportRepository();
     this.pets = new PetRepository();
-    this.push = new ExpoPushService(this.repo);
   }
 
   async nearby(params: {
@@ -103,6 +109,17 @@ export class LostReportService {
     };
   }
 
+  async listSightingsOwnerOnly(params: {
+    reportId: string;
+    userId: string;
+  }): Promise<SightingDto[]> {
+    const report = await this.repo.findById(params.reportId);
+    if (!report) throw new NotFoundError('Lost report not found');
+    if (report.user_id !== params.userId) throw new ForbiddenError();
+    const sightings = await this.repo.listSightingsForReport(params.reportId);
+    return sightings.map(toSightingDto);
+  }
+
   async createLostReport(params: {
     userId: string;
     petId: string;
@@ -126,17 +143,16 @@ export class LostReportService {
 
     // Background: no bloquear respuesta HTTP
     setImmediate(() => {
-      void this.push
-        .notifyLostReportNearby({
+      void notificationsService
+        .sendLostPetAlert({
           reportId: created.id,
+          petName: pet.name,
+          ownerId: params.userId,
           lat: params.lat,
           lng: params.lng,
-          excludeUserId: params.userId,
           radiusMeters: 10_000,
         })
-        .catch(() => {
-          // swallow en background; el logger ya registra fallos internos
-        });
+        .catch(() => {});
     });
 
     return created;
@@ -149,26 +165,48 @@ export class LostReportService {
     lng: number;
     message?: string;
     files: Express.Multer.File[];
-  }): Promise<{ id: string }> {
-    const report = await this.repo.findById(params.reportId);
+  }): Promise<SightingDto> {
+    const report = await this.repo.findDetailById(params.reportId);
     if (!report) throw new NotFoundError('Lost report not found');
-    if (report.status !== 'active') throw new NotFoundError('Lost report not found');
+    if (report.status !== 'active') throw new ValidationError('Lost report is resolved');
 
-    const uploads = await Promise.all(
-      (params.files ?? []).map((file) =>
-        uploadFile(file.buffer, `sightings/${params.reportId}`, file.originalname, file.mimetype),
-      ),
-    );
-    const photos = uploads.map((u) => u.url);
-
-    return this.repo.createSighting({
+    const created = await this.repo.createSighting({
       reportId: params.reportId,
       reporterId: params.reporterId,
       lat: params.lat,
       lng: params.lng,
       message: params.message,
-      photos,
     });
+
+    const uploads = await Promise.all(
+      (params.files ?? []).map((file) =>
+        uploadFile(file.buffer, `sightings/${created.id}`, file.originalname, file.mimetype),
+      ),
+    );
+    const photos = uploads.map((u) => u.url);
+    if (photos.length) {
+      await this.repo.updateSightingPhotos({ sightingId: created.id, photos });
+    }
+
+    // Background push al dueño (FCM)
+    setImmediate(() => {
+      void notificationsService
+        .sendSightingNotification({
+          ownerId: report.user_id,
+          petName: report.pet_name,
+          reportId: report.id,
+        })
+        .catch(() => {});
+    });
+
+    return {
+      id: created.id,
+      reporter: { id: anonymizeReporterId(params.reportId, params.reporterId) },
+      location: { lat: Number(created.lat), lng: Number(created.lng) },
+      photo: photos[0] ?? null,
+      message: created.message,
+      seenAt: new Date(created.seen_at).toISOString(),
+    };
   }
 
   async resolve(params: { reportId: string; userId: string }): Promise<void> {

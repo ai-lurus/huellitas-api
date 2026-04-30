@@ -5,16 +5,18 @@ import * as Sentry from '@sentry/node';
 import express from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
-import { rateLimit } from 'express-rate-limit';
 import { toNodeHandler } from 'better-auth/node';
 import { logger } from './config/logger';
-import { checkDbConnection } from './db/index';
 import { auth } from './config/auth';
 import { apiRouter } from './routes/index';
 import { usersRouter } from './routes/users.routes';
+import { healthRouter } from './routes/health.routes';
 import { requestIdMiddleware } from './middleware/requestId.middleware';
 import { httpLoggerMiddleware } from './middleware/http-logger.middleware';
 import { errorMiddleware } from './middleware/error.middleware';
+import { authLimiter } from './middleware/rateLimit.middleware';
+import { scheduleExpireReports } from './jobs/expireReports.job';
+import { sentryContextMiddleware } from './middleware/sentry-context.middleware';
 
 const app = express();
 const PORT = process.env['PORT'] ?? 3000;
@@ -28,42 +30,18 @@ app.use(
   }),
 );
 
-// Rate limiting
-app.use(
-  rateLimit({
-    windowMs: 60 * 1000,
-    max: 100,
-    standardHeaders: true,
-    legacyHeaders: false,
-  }),
-);
-
 // Request parsing
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(requestIdMiddleware);
+app.use(sentryContextMiddleware);
 app.use(httpLoggerMiddleware);
 
-// Better Auth — límite por IP (get-session en el cliente puede dispararse a menudo)
-const authLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: process.env['NODE_ENV'] === 'production' ? 60 : 300,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { success: false, error: 'Too many requests, please try again later.' },
-});
+// Better Auth — 5 req/min por IP
 app.all('/api/auth/*', authLimiter, toNodeHandler(auth));
 
-// Health check (no auth required)
-app.get('/health', async (_req: express.Request, res: express.Response) => {
-  const dbOk = await checkDbConnection();
-  const status = dbOk ? 'ok' : 'degraded';
-  res.status(dbOk ? 200 : 503).json({
-    status,
-    version: process.env['npm_package_version'] ?? '0.1.0',
-    timestamp: new Date().toISOString(),
-  });
-});
+// Info + Health check (no auth required, no rate limit)
+app.use('/', healthRouter);
 
 // API routes
 app.use('/api/v1', apiRouter);
@@ -79,5 +57,8 @@ app.use(errorMiddleware);
 app.listen(PORT, () => {
   logger.info(`🐾 Huellitas API running on port ${PORT}`);
 });
+
+// Background jobs
+scheduleExpireReports();
 
 export { app };

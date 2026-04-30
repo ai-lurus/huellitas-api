@@ -111,7 +111,7 @@ export async function postSighting(req: Request, res: Response, next: NextFuncti
       throw new ValidationError('Coordenadas inválidas');
     }
 
-    const created = await service.addSighting({
+    const sighting = await service.addSighting({
       reportId: reportIdParam(req),
       reporterId: getUserId(req),
       lat: parsed.data.lat,
@@ -120,7 +120,7 @@ export async function postSighting(req: Request, res: Response, next: NextFuncti
       files: getUploadedPhotos(req),
     });
 
-    res.status(201).json({ success: true, data: created });
+    res.status(201).json({ success: true, data: sighting });
   } catch (err) {
     next(err);
   }
@@ -130,6 +130,18 @@ export async function patchResolve(req: Request, res: Response, next: NextFuncti
   try {
     await service.resolve({ reportId: reportIdParam(req), userId: getUserId(req) });
     res.status(204).send();
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getSightings(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const data = await service.listSightingsOwnerOnly({
+      reportId: reportIdParam(req),
+      userId: getUserId(req),
+    });
+    res.json({ success: true, data });
   } catch (err) {
     next(err);
   }

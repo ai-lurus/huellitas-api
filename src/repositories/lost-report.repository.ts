@@ -48,6 +48,8 @@ export interface SightingRow {
   message: string | null;
   seen_at: Date;
   created_at: Date;
+  lat: number;
+  lng: number;
   reporter_name: string;
   reporter_image: string | null;
 }
@@ -62,6 +64,20 @@ export class LostReportRepository {
 
   constructor(pool?: Pool) {
     this.pool = pool ?? getPool();
+  }
+
+  async expireOldReports(daysOld: number): Promise<number> {
+    const { rowCount } = await this.pool.query(
+      `
+      UPDATE lost_reports
+      SET status = 'resolved', updated_at = NOW()
+      WHERE status = 'active'
+        AND deleted_at IS NULL
+        AND created_at < NOW() - ($1::int * INTERVAL '1 day')
+      `,
+      [daysOld],
+    );
+    return rowCount ?? 0;
   }
 
   async findById(reportId: string): Promise<LostReportRow | null> {
@@ -103,6 +119,8 @@ export class LostReportRepository {
         s.message,
         s.seen_at,
         s.created_at,
+        ST_Y(s.location::geometry) AS lat,
+        ST_X(s.location::geometry) AS lng,
         u.name AS reporter_name,
         u.image AS reporter_image
       FROM sightings s
@@ -121,35 +139,49 @@ export class LostReportRepository {
     lat: number;
     lng: number;
     message?: string;
-    photos: string[];
-  }): Promise<{ id: string }> {
-    const { rows } = await this.pool.query<{ id: string }>(
+  }): Promise<{ id: string; lat: number; lng: number; message: string | null; seen_at: Date }> {
+    const { rows } = await this.pool.query<{
+      id: string;
+      lat: number;
+      lng: number;
+      message: string | null;
+      seen_at: Date;
+    }>(
       `
       INSERT INTO sightings (report_id, reporter_id, location, photo_url, photos, message, seen_at)
       VALUES (
         $1,
         $2,
         ST_SetSRID(ST_MakePoint($3, $4), 4326)::geography,
+        NULL,
+        '{}'::text[],
         $5,
-        $6,
-        $7,
         NOW()
       )
-      RETURNING id
+      RETURNING
+        id,
+        ST_Y(location::geometry) AS lat,
+        ST_X(location::geometry) AS lng,
+        message,
+        seen_at
       `,
-      [
-        params.reportId,
-        params.reporterId,
-        params.lng,
-        params.lat,
-        params.photos[0] ?? null,
-        params.photos,
-        params.message ?? null,
-      ],
+      [params.reportId, params.reporterId, params.lng, params.lat, params.message ?? null],
     );
     const created = rows[0];
     if (!created) throw new Error('Failed to create sighting');
     return created;
+  }
+
+  async updateSightingPhotos(params: { sightingId: string; photos: string[] }): Promise<void> {
+    await this.pool.query(
+      `
+      UPDATE sightings
+      SET photos = $2::text[],
+          photo_url = $3
+      WHERE id = $1
+      `,
+      [params.sightingId, params.photos, params.photos[0] ?? null],
+    );
   }
 
   async resolveReport(reportId: string): Promise<boolean> {

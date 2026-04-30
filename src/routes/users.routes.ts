@@ -2,6 +2,7 @@ import { Router } from 'express';
 import multer from 'multer';
 import { requireAuth } from '../middleware/auth.middleware';
 import { validate } from '../middleware/validate.middleware';
+import { apiLimiter } from '../middleware/rateLimit.middleware';
 import {
   patchUserProfileSchema,
   updateUserSettingsSchema,
@@ -25,6 +26,7 @@ const upload = multer({
 });
 
 router.use(requireAuth);
+router.use(apiLimiter);
 
 router.get('/me', userController.getMe);
 // `PATCH /users/me` soporta JSON o multipart/form-data (campo `image`).

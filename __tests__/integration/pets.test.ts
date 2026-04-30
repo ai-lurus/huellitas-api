@@ -23,9 +23,12 @@ jest.mock('../../src/middleware/auth.middleware', () => ({
 
 // Mock storage service to avoid real R2 calls
 jest.mock('../../src/services/storage.service', () => ({
-  uploadFile: jest.fn().mockResolvedValue({
-    url: 'https://cdn.huellitas.app/pets/test-pet/photo.jpg',
-    id: 'mock-upload-id',
+  uploadFile: jest.fn().mockImplementation(async (_buf, folder: string, originalName: string) => {
+    const ext = String(originalName).split('.').pop() ?? 'bin';
+    return {
+      url: `https://cdn.huellitas.app/${folder}/mock.${ext}`,
+      id: 'mock-upload-id',
+    };
   }),
   deleteFile: jest.fn().mockResolvedValue(undefined),
 }));
@@ -147,7 +150,9 @@ describeIfDb('Pets API — Integration Tests', () => {
       const item = (listRes.body.data as Array<{ id: string; coverPhotoUrl: string | null }>).find(
         (p) => p.id === petId,
       );
-      expect(item?.coverPhotoUrl).toBe('https://cdn.huellitas.app/pets/test-pet/photo.jpg');
+      expect(item?.coverPhotoUrl).toMatch(
+        new RegExp(`^https://cdn\\.huellitas\\.app/pets/${petId}/`),
+      );
     });
   });
 
@@ -361,14 +366,17 @@ describeIfDb('Pets API — Integration Tests', () => {
         ]);
         expect(getRes.body.data.coverPhotoUrl).toBe('https://cdn.seq.test/p-1.jpg');
       } finally {
-        uploadFile.mockResolvedValue({
-          url: 'https://cdn.huellitas.app/pets/test-pet/photo.jpg',
-          id: 'mock-upload-id',
+        uploadFile.mockImplementation(async (_buf, folder: string, originalName: string) => {
+          const ext = String(originalName).split('.').pop() ?? 'bin';
+          return {
+            url: `https://cdn.huellitas.app/${folder}/mock.${ext}`,
+            id: 'mock-upload-id',
+          };
         });
       }
     });
 
-    it('uploads a photo and returns public url and id', async () => {
+    it('uploads a photo and returns public url', async () => {
       const created = await request(app)
         .post('/api/v1/pets')
         .send({ name: 'PhotoPet', species: 'dog', sex: 'male' });
@@ -383,10 +391,44 @@ describeIfDb('Pets API — Integration Tests', () => {
 
       expect(res.status).toBe(201);
       expect(res.body.data.url).toContain('https://');
-      expect(res.body.data.id).toBe('mock-upload-id');
+      expect(res.body.data.url).toMatch(
+        new RegExp(`^https://cdn\\.huellitas\\.app/pets/${petId}/`),
+      );
 
       const getRes = await request(app).get(`/api/v1/pets/${petId}`);
       expect(getRes.body.data.photos).toHaveLength(1);
+    });
+
+    it('rechaza tipos no permitidos (GIF/PDF) con 400', async () => {
+      const created = await request(app)
+        .post('/api/v1/pets')
+        .send({ name: 'BadType', species: 'dog', sex: 'male' });
+      const petId = created.body.data.id as string;
+
+      const res = await request(app)
+        .post(`/api/v1/pets/${petId}/photos`)
+        .attach('photo', Buffer.from('%PDF'), {
+          filename: 'x.pdf',
+          contentType: 'application/pdf',
+        });
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('INVALID_FILE_TYPE');
+    });
+
+    it('rechaza archivo > 10MB con 413', async () => {
+      const created = await request(app)
+        .post('/api/v1/pets')
+        .send({ name: 'TooBig', species: 'dog', sex: 'male' });
+      const petId = created.body.data.id as string;
+
+      const big = Buffer.alloc(11 * 1024 * 1024, 1);
+      const res = await request(app)
+        .post(`/api/v1/pets/${petId}/photos`)
+        .attach('photo', big, { filename: 'big.jpg', contentType: 'image/jpeg' });
+
+      expect(res.status).toBe(413);
+      expect(res.body.code).toBe('FILE_TOO_LARGE');
     });
 
     it('returns 400 when no file is provided', async () => {
