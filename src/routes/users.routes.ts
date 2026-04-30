@@ -5,6 +5,7 @@ import { validate } from '../middleware/validate.middleware';
 import { apiLimiter } from '../middleware/rateLimit.middleware';
 import {
   patchUserProfileSchema,
+  updateLocationSchema,
   updateUserSettingsSchema,
   registerPushTokenSchema,
 } from '../schemas/user.schemas';
@@ -54,7 +55,7 @@ router.patch(
   },
   userController.patchMe,
 );
-router.patch('/me/location', userController.patchLocation);
+router.patch('/me/location', validate(updateLocationSchema), userController.patchLocation);
 router.patch('/me/settings', validate(updateUserSettingsSchema), userController.patchSettings);
 router.post('/me/push-token', validate(registerPushTokenSchema), userController.postPushToken);
 router.delete('/me/push-token', userController.deletePushToken);

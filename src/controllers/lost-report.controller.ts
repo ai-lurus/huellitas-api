@@ -1,11 +1,11 @@
 import { Request, Response, NextFunction } from 'express';
 import { LostReportService } from '../services/lost-report.service';
 import {
-  createLostReportSchema,
-  createSightingSchema,
-  nearbyLostReportsQuerySchema,
+  CreateLostReportInput,
+  CreateSightingInput,
+  NearbyLostReportsQuery,
 } from '../schemas/lost-report.schemas';
-import { UnauthorizedError, ValidationError } from '../utils/errors';
+import { UnauthorizedError } from '../utils/errors';
 
 const service = new LostReportService();
 
@@ -20,12 +20,7 @@ export async function getNearbyLostReports(
   next: NextFunction,
 ): Promise<void> {
   try {
-    const parsed = nearbyLostReportsQuerySchema.safeParse(req.query);
-    if (!parsed.success) {
-      throw new ValidationError('Coordenadas inválidas');
-    }
-
-    const { lat, lng, radius, species } = parsed.data;
+    const { lat, lng, radius, species } = req.query as unknown as NearbyLostReportsQuery;
     const data = await service.nearby({
       lat,
       lng,
@@ -61,20 +56,14 @@ export async function postLostReport(
   next: NextFunction,
 ): Promise<void> {
   try {
-    const body = req.body as unknown;
-    const parsed = createLostReportSchema.safeParse(body);
-    if (!parsed.success) {
-      // Para coords inválidas, forzamos 400 como pidió el ticket.
-      throw new ValidationError('Coordenadas inválidas');
-    }
-
+    const body = req.body as CreateLostReportInput;
     const created = await service.createLostReport({
       userId: getUserId(req),
-      petId: parsed.data.petId,
-      lat: parsed.data.lat,
-      lng: parsed.data.lng,
-      lastSeenAt: new Date(parsed.data.lastSeenAt),
-      message: parsed.data.message,
+      petId: body.petId,
+      lat: body.lat,
+      lng: body.lng,
+      lastSeenAt: new Date(body.lastSeenAt),
+      message: body.message,
     });
 
     res.status(201).json({
@@ -106,17 +95,13 @@ function getUploadedPhotos(req: Request): Express.Multer.File[] {
 
 export async function postSighting(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    const parsed = createSightingSchema.safeParse(req.body);
-    if (!parsed.success) {
-      throw new ValidationError('Coordenadas inválidas');
-    }
-
+    const body = req.body as CreateSightingInput;
     const sighting = await service.addSighting({
       reportId: reportIdParam(req),
       reporterId: getUserId(req),
-      lat: parsed.data.lat,
-      lng: parsed.data.lng,
-      message: parsed.data.message,
+      lat: body.lat,
+      lng: body.lng,
+      message: body.message,
       files: getUploadedPhotos(req),
     });
 

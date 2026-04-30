@@ -4,5 +4,5 @@ declare module 'swagger-jsdoc' {
     apis: string[];
   };
 
-  export default function swaggerJSDoc(options: SwaggerJSDocOptions): unknown;
+  export default function swaggerJSDoc(options: SwaggerJSDocOptions): Record<string, unknown>;
 }

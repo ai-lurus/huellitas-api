@@ -2,7 +2,7 @@ import swaggerJSDoc from 'swagger-jsdoc';
 
 const API_VERSION = '1.0.0';
 
-export function buildOpenApiSpec(): unknown {
+export function buildOpenApiSpec(): Record<string, unknown> {
   return swaggerJSDoc({
     definition: {
       openapi: '3.0.3',

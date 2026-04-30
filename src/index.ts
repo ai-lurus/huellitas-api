@@ -1,5 +1,4 @@
 import 'dotenv/config';
-import { corsAllowedOrigins } from './config/env'; // valida env y expone orígenes CORS
 import './config/sentry'; // Must be before express import
 import * as Sentry from '@sentry/node';
 import express from 'express';
@@ -8,10 +7,12 @@ import cors from 'cors';
 import { toNodeHandler } from 'better-auth/node';
 import { logger } from './config/logger';
 import { auth } from './config/auth';
+import { corsOptions, helmetOptions } from './config/security';
 import { apiRouter } from './routes/index';
 import { usersRouter } from './routes/users.routes';
 import { healthRouter } from './routes/health.routes';
 import { docsRouter } from './routes/docs.routes';
+import { warmupPool } from './db/index';
 import { requestIdMiddleware } from './middleware/requestId.middleware';
 import { httpLoggerMiddleware } from './middleware/http-logger.middleware';
 import { errorMiddleware } from './middleware/error.middleware';
@@ -23,13 +24,8 @@ const app = express();
 const PORT = process.env['PORT'] ?? 3000;
 
 // Security middleware
-app.use(helmet());
-app.use(
-  cors({
-    origin: corsAllowedOrigins,
-    credentials: true,
-  }),
-);
+app.use(helmet(helmetOptions));
+app.use(cors(corsOptions));
 
 // Request parsing
 app.use(express.json({ limit: '10mb' }));
@@ -66,5 +62,6 @@ app.listen(PORT, () => {
 
 // Background jobs
 scheduleExpireReports();
+void warmupPool(2);
 
 export { app };

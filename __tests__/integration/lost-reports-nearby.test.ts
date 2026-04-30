@@ -136,12 +136,12 @@ describeIfDb('Lost Reports API — GET /nearby', () => {
     expect((near?.distance ?? 0) > 0).toBe(true);
   });
 
-  it('400 si lat/lng inválidos', async () => {
+  it('422 si lat/lng inválidos', async () => {
     const res = await request(app).get('/api/v1/lost-reports/nearby').query({
       lat: 999,
       lng: baseLng,
     });
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(422);
     expect(res.body.success).toBe(false);
   });
 

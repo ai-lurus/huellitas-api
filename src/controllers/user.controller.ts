@@ -6,8 +6,7 @@ import {
   UpdateUserSettingsInput,
   RegisterPushTokenInput,
 } from '../schemas/user.schemas';
-import { UnauthorizedError, ValidationError } from '../utils/errors';
-import { updateLocationSchema } from '../schemas/user.schemas';
+import { UnauthorizedError } from '../utils/errors';
 
 const service = new UserService();
 
@@ -63,11 +62,7 @@ export async function patchLocation(
   next: NextFunction,
 ): Promise<void> {
   try {
-    const parsed = updateLocationSchema.safeParse(req.body);
-    if (!parsed.success) {
-      throw new ValidationError('Coordenadas inválidas');
-    }
-    const body = parsed.data as UpdateLocationInput;
+    const body = req.body as UpdateLocationInput;
     const data = await service.updateLocation(getUserId(req), body);
     res.json({ success: true, data });
   } catch (err) {
