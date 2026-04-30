@@ -11,6 +11,7 @@ import { auth } from './config/auth';
 import { apiRouter } from './routes/index';
 import { usersRouter } from './routes/users.routes';
 import { healthRouter } from './routes/health.routes';
+import { docsRouter } from './routes/docs.routes';
 import { requestIdMiddleware } from './middleware/requestId.middleware';
 import { httpLoggerMiddleware } from './middleware/http-logger.middleware';
 import { errorMiddleware } from './middleware/error.middleware';
@@ -42,6 +43,11 @@ app.all('/api/auth/*', authLimiter, toNodeHandler(auth));
 
 // Info + Health check (no auth required, no rate limit)
 app.use('/', healthRouter);
+
+// Swagger (non-production only)
+if (process.env['NODE_ENV'] !== 'production') {
+  app.use('/api', docsRouter);
+}
 
 // API routes
 app.use('/api/v1', apiRouter);
