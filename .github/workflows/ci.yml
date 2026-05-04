@@ -1,14 +1,43 @@
-name: CI
+# BE-020: CI/CD — lint, test (PostGIS), coverage, Docker build/push, deploy staging (main).
+# Valores de prueba en el job `test` (no secretos de producción). Registry y deploy usan GitHub Secrets.
+
+name: CI/CD
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main]
   pull_request:
-    branches: [main, develop]
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write
+  pull-requests: read
 
 jobs:
-  test:
+  lint:
+    name: Lint
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - run: npm ci
+      - run: npm run lint
+      - run: npx tsc --noEmit -p tsconfig.json
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    needs: [lint]
 
     services:
       postgres:
@@ -20,7 +49,7 @@ jobs:
         ports:
           - 5432:5432
         options: >-
-          --health-cmd pg_isready
+          --health-cmd pg_isready -U postgres
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -28,20 +57,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: 'npm'
 
-      - name: Install dependencies
-        run: npm ci
+      - run: npm ci
 
-      - name: Lint
-        run: npm run lint
-
-      - name: Type check
-        run: npx tsc --noEmit
+      - name: Run migrations
+        run: npm run migrate
+        env:
+          DATABASE_URL: postgresql://postgres:test@localhost:5432/huellitas_test
 
       - name: Run tests with coverage
         run: npm run test:ci
@@ -50,15 +76,89 @@ jobs:
           PORT: 3000
           API_URL: http://localhost:3000
           DATABASE_URL: postgresql://postgres:test@localhost:5432/huellitas_test
-          BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
+          BETTER_AUTH_SECRET: test-secret-at-least-32-characters-long
           BETTER_AUTH_URL: http://localhost:3000
-          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
-          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
-          FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
-          FIREBASE_CLIENT_EMAIL: ${{ secrets.FIREBASE_CLIENT_EMAIL }}
-          FIREBASE_PRIVATE_KEY: ${{ secrets.FIREBASE_PRIVATE_KEY }}
-          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
-          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          R2_BUCKET_NAME: huellitas-test
-          R2_PUBLIC_URL: https://test.huellitas.app
+          GOOGLE_CLIENT_ID: test-google-client-id
+          GOOGLE_CLIENT_SECRET: test-google-client-secret
+          FIREBASE_PROJECT_ID: test
+          FIREBASE_CLIENT_EMAIL: test@test.com
+          FIREBASE_PRIVATE_KEY: |
+            -----BEGIN RSA PRIVATE KEY-----
+            test
+            -----END RSA PRIVATE KEY-----
+          R2_ACCOUNT_ID: test
+          R2_ACCESS_KEY_ID: test
+          R2_SECRET_ACCESS_KEY: test
+          R2_BUCKET_NAME: test
+          R2_PUBLIC_URL: http://localhost:9000
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage/lcov.info
+          fail_ci_error: false
+
+  build:
+    name: Build image
+    runs-on: ubuntu-latest
+    needs: [lint, test]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Lowercase image name (GHCR)
+        id: image
+        run: |
+          OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          echo "image=ghcr.io/${OWNER}/huellitas-api" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build (and push on main)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          tags: |
+            ${{ steps.image.outputs.image }}:latest
+            ${{ steps.image.outputs.image }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy-staging:
+    name: Deploy staging
+    runs-on: ubuntu-latest
+    needs: [build]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    environment: staging
+    steps:
+      - name: Trigger staging deploy
+        env:
+          STAGING_DEPLOY_HOOK_URL: ${{ secrets.STAGING_DEPLOY_HOOK_URL }}
+          STAGING_DEPLOY_TOKEN: ${{ secrets.STAGING_DEPLOY_TOKEN }}
+        run: |
+          set -e
+          if [ -z "${STAGING_DEPLOY_HOOK_URL}" ]; then
+            echo "::warning::STAGING_DEPLOY_HOOK_URL no está definido en GitHub Secrets; se omite el deploy."
+            exit 0
+          fi
+          if [ -n "${STAGING_DEPLOY_TOKEN}" ]; then
+            curl -fsS -X POST "${STAGING_DEPLOY_HOOK_URL}" \
+              -H "Authorization: Bearer ${STAGING_DEPLOY_TOKEN}" \
+              -H "Content-Type: application/json" \
+              -d "{\"ref\":\"${GITHUB_SHA}\",\"repository\":\"${GITHUB_REPOSITORY}\"}"
+          else
+            curl -fsS -X POST "${STAGING_DEPLOY_HOOK_URL}" \
+              -H "Content-Type: application/json" \
+              -d "{\"ref\":\"${GITHUB_SHA}\",\"repository\":\"${GITHUB_REPOSITORY}\"}"
+          fi

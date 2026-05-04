@@ -27,4 +27,6 @@ module.exports = {
   },
   globalSetup: './__tests__/setup/globalSetup.ts',
   globalTeardown: './__tests__/setup/globalTeardown.ts',
+  coverageDirectory: 'coverage',
+  coverageReporters: ['text', 'lcov', 'html'],
 };

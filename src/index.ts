@@ -23,6 +23,11 @@ import { sentryContextMiddleware } from './middleware/sentry-context.middleware'
 const app = express();
 const PORT = process.env['PORT'] ?? 3000;
 
+// Detrás de reverse proxy (Railway, Render, etc.): IP real y `req.secure` correctos para rate limit / logs.
+if (process.env['NODE_ENV'] === 'production') {
+  app.set('trust proxy', 1);
+}
+
 // Security middleware
 app.use(helmet(helmetOptions));
 app.use(cors(corsOptions));
