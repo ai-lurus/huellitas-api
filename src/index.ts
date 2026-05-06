@@ -1,72 +1,22 @@
-import 'dotenv/config';
-import './config/sentry'; // Must be before express import
-import * as Sentry from '@sentry/node';
-import express from 'express';
-import helmet from 'helmet';
-import cors from 'cors';
-import { toNodeHandler } from 'better-auth/node';
+import app from './app';
 import { logger } from './config/logger';
-import { auth } from './config/auth';
-import { corsOptions, helmetOptions } from './config/security';
-import { apiRouter } from './routes/index';
-import { usersRouter } from './routes/users.routes';
-import { healthRouter } from './routes/health.routes';
-import { docsRouter } from './routes/docs.routes';
 import { warmupPool } from './db/index';
-import { requestIdMiddleware } from './middleware/requestId.middleware';
-import { httpLoggerMiddleware } from './middleware/http-logger.middleware';
-import { errorMiddleware } from './middleware/error.middleware';
-import { authLimiter } from './middleware/rateLimit.middleware';
 import { scheduleExpireReports } from './jobs/expireReports.job';
-import { sentryContextMiddleware } from './middleware/sentry-context.middleware';
 
-const app = express();
 const PORT = process.env['PORT'] ?? 3000;
 
-// Detrás de reverse proxy (Railway, Render, etc.): IP real y `req.secure` correctos para rate limit / logs.
-if (process.env['NODE_ENV'] === 'production') {
-  app.set('trust proxy', 1);
+// En Vercel (serverless) NO hay que ejecutar `listen()` ni jobs de fondo:
+// Vercel invoca la función por request y espera que el handler termine.
+if (!process.env['VERCEL']) {
+  app.listen(PORT, () => {
+    logger.info(`🐾 Huellitas API running on port ${PORT}`);
+  });
+
+  // Background jobs (solo en runtime persistente)
+  scheduleExpireReports();
+  void warmupPool(2).catch((err) => {
+    logger.warn({ message: 'DB warmup failed', err });
+  });
 }
 
-// Security middleware
-app.use(helmet(helmetOptions));
-app.use(cors(corsOptions));
-
-// Request parsing
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true }));
-app.use(requestIdMiddleware);
-app.use(sentryContextMiddleware);
-app.use(httpLoggerMiddleware);
-
-// Better Auth — 5 req/min por IP
-app.all('/api/auth/*', authLimiter, toNodeHandler(auth));
-
-// Info + Health check (no auth required, no rate limit)
-app.use('/', healthRouter);
-
-// Swagger (non-production only)
-if (process.env['NODE_ENV'] !== 'production') {
-  app.use('/api', docsRouter);
-}
-
-// API routes
-app.use('/api/v1', apiRouter);
-// Alias: el cliente móvil usa `/users/me` sin prefijo `/api/v1`
-app.use('/users', usersRouter);
-
-// Sentry error handler (must be before custom error handler)
-Sentry.setupExpressErrorHandler(app);
-
-// Centralized error handler (must be last)
-app.use(errorMiddleware);
-
-app.listen(PORT, () => {
-  logger.info(`🐾 Huellitas API running on port ${PORT}`);
-});
-
-// Background jobs
-scheduleExpireReports();
-void warmupPool(2);
-
-export { app };
+export default app;
