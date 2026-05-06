@@ -1,0 +1,15 @@
+# Config as Code — Railway
+# https://docs.railway.app/deploy/config-as-code
+#
+# Healthcheck durante el despliegue: Railway pide GET hasta recibir 200 (zero-downtime rollout).
+# Hostname de probe: healthcheck.railway.app (debe responder /health sin bloqueo CORS especial).
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+startCommand = "node dist/index.js"
+healthcheckPath = "/health"
+healthcheckTimeout = 120
+restartPolicyType = "ON_FAILURE"

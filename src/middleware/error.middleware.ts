@@ -22,11 +22,15 @@ export function errorMiddleware(
 ): void {
   const requestId = req.requestId;
   const userId = req.user?.id;
+  const method = req.method;
+  const url = req.originalUrl ?? req.url;
 
   if (err instanceof ZodError) {
     logger.warn({
       requestId,
       userId,
+      method,
+      url,
       message: 'Validation error',
       details: err.flatten().fieldErrors,
     });
@@ -39,7 +43,7 @@ export function errorMiddleware(
   }
 
   if (err instanceof multer.MulterError) {
-    logger.warn({ requestId, userId, message: 'Multer error', code: err.code });
+    logger.warn({ requestId, userId, method, url, message: 'Multer error', code: err.code });
     if (err.code === 'LIMIT_FILE_SIZE') {
       res.status(413).json({
         success: false,
@@ -57,7 +61,7 @@ export function errorMiddleware(
   }
 
   if (err instanceof Error && err.message === 'INVALID_FILE_TYPE') {
-    logger.warn({ requestId, userId, message: 'Invalid upload MIME type' });
+    logger.warn({ requestId, userId, method, url, message: 'Invalid upload MIME type' });
     res.status(400).json({
       success: false,
       error: 'Invalid file type. Allowed: JPEG, PNG, WebP.',
@@ -67,7 +71,7 @@ export function errorMiddleware(
   }
 
   if (err instanceof AppError) {
-    logger.warn({ requestId, userId, code: err.code, message: err.message });
+    logger.warn({ requestId, userId, method, url, code: err.code, message: err.message });
     res.status(err.statusCode).json({
       success: false,
       error: err.message,
@@ -81,6 +85,8 @@ export function errorMiddleware(
   logger.error({
     requestId,
     userId,
+    method,
+    url,
     message: 'Unexpected error',
     errorName: e.name,
     errorMessage: e.message,
@@ -88,6 +94,6 @@ export function errorMiddleware(
   });
   res.status(500).json({
     success: false,
-    error: 'Internal server error',
+    error: 'Internal Server Error',
   });
 }

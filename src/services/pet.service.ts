@@ -52,13 +52,31 @@ export class PetService {
     if (!pet) throw new NotFoundError('Pet not found');
     if (pet.user_id !== userId) throw new ForbiddenError();
     await this.repo.softDelete(petId);
+
+    // Best-effort: limpiar fotos en background si hay storage configurado.
+    const urls = [...(pet.photos ?? [])];
+    if (urls.length) {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { deleteFile } = require('./storage.service') as typeof import('./storage.service');
+      setImmediate(() => {
+        void Promise.all(
+          urls.map(async (u) => {
+            try {
+              await deleteFile(u);
+            } catch {
+              // best-effort
+            }
+          }),
+        );
+      });
+    }
   }
 
   async addPhoto(
     petId: string,
     userId: string,
     file: Express.Multer.File,
-  ): Promise<{ url: string; id: string }> {
+  ): Promise<{ url: string }> {
     const pet = await this.repo.findById(petId);
     if (!pet) throw new NotFoundError('Pet not found');
     if (pet.user_id !== userId) throw new ForbiddenError('You do not have access to this pet');
@@ -78,6 +96,8 @@ export class PetService {
 
     const updated = await this.repo.addPhoto(petId, publicUrl);
     if (!updated) throw new NotFoundError('Pet not found');
-    return { url: publicUrl, id: uploaded.id };
+    return { url: publicUrl };
   }
+
+  // (deletePet definido arriba)
 }

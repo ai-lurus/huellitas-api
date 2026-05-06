@@ -29,7 +29,8 @@ function buildTrustedOrigins(
       .map((t) => t.trim())
       .filter(Boolean);
   } else if (nodeEnv === 'production') {
-    base = ['https://huellitas.app'];
+    // Producción: frontend + dominio de la API (útil para pruebas / Swagger si se habilita en algún entorno).
+    base = ['https://huellitas.app', 'https://huellitas-api.vercel.app'];
   } else {
     base = [...DEFAULT_DEV_TRUSTED_ORIGINS];
   }
