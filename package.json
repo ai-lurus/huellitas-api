@@ -3,16 +3,17 @@
   "version": "0.1.0",
   "description": "Huellitas backend API — Node.js + Express + PostgreSQL",
   "main": "dist/index.js",
+  "type": "module",
   "scripts": {
-    "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
+    "dev": "tsx watch src/index.ts",
     "build": "tsc -p tsconfig.build.json",
     "start": "node dist/index.js",
     "lint": "eslint src --ext .ts",
     "lint:fix": "eslint src --ext .ts --fix",
     "format": "prettier --write 'src/**/*.ts'",
     "prepare": "husky",
-    "migrate": "ts-node src/db/migrate.ts",
-    "db:reset": "ts-node src/scripts/db-reset.ts"
+    "migrate": "tsx src/db/migrate.ts",
+    "db:reset": "tsx src/scripts/db-reset.ts"
   },
   "engines": {
     "node": ">=22.0.0"
@@ -57,7 +58,7 @@
     "lint-staged": "^15.0.0",
     "prettier": "^3.0.0",
     "ts-node": "^10.9.0",
-    "ts-node-dev": "^2.0.0",
+    "tsx": "^4.0.0",
     "typescript": "^5.3.0"
   }
 }
